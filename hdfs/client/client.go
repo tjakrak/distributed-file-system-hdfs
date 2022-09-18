@@ -49,7 +49,7 @@ func fileToChunk(filename string) *[][]byte {
 }
 
 func main() {
-	var listOfChunks [][]byte = *fileToChunk("../L2-tjakrak/log.txt")
+	var listOfChunks [][]byte = *fileToChunk("../../L2-tjakrak/log.txt")
 	log.Println("Number of parts: " + strconv.FormatInt(int64(len(listOfChunks)), 10))
 
 	//for i := 0; i < len(listOfChunks); i++ {
