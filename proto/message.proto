@@ -1,0 +1,43 @@
+syntax = "proto3";
+option go_package = "./message";
+
+/* protoc -I=/Users/ryantjakrakartadinata/go/src/L3-tjakrak/proto --go_out=/Users/ryantjakrakartadinata/go/src/L3-tjakrak/proto /Users/ryantjakrakartadinata/go/src/L3-tjakrak/proto/chat.proto */
+
+/* Register a username */
+message StorageNode {
+  string username = 1;
+  operationType type = 2;
+
+  enum operationType {
+    REGISTER = 0;
+    HEARTBEAT = 1;
+    REPLICATE= 2;
+  }
+}
+
+/* Regular chat message with username + message */
+message Client {
+  string username = 1;
+  string message_body = 2;
+  operationType type = 3;
+
+  enum operationType {
+    GET = 0;
+    PUT = 1;
+    OTHER = 2;
+  }
+}
+
+/* Direct message to a specific host */
+message Upload {
+  string destination_username = 2;
+  Chat msg = 3;
+}
+
+message Wrapper {
+  oneof msg {
+    CommandLine cmd_message = 1;
+    Download download_message = 2;
+    Upload upload_message = 3;
+  }
+}
