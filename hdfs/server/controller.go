@@ -7,6 +7,8 @@ import (
 )
 
 func main() {
+	//home := data_structure.New("home", "directory")
+
 	listener, err := net.Listen("tcp", ":9999")
 	if err != nil {
 		log.Fatalln(err.Error())

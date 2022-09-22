@@ -4,8 +4,8 @@ option go_package = "./message";
 /* protoc -I=/Users/ryantjakrakartadinata/go/src/L3-tjakrak/proto --go_out=/Users/ryantjakrakartadinata/go/src/L3-tjakrak/proto /Users/ryantjakrakartadinata/go/src/L3-tjakrak/proto/chat.proto */
 
 /* Register a username */
-message StorageNode {
-  string username = 1;
+message Upload {
+  string directory = 1;
   operationType type = 2;
 
   enum operationType {

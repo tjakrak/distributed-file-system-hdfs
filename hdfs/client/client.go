@@ -66,4 +66,8 @@ func main() {
 	//	os.WriteFile(fileName, listOfChunks[i], os.ModeAppend)
 	//}
 
+	/*
+		file.writeAt go
+	*/
+
 }
