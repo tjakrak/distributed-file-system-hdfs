@@ -1,0 +1,43 @@
+syntax = "proto3";
+option go_package = "./message";
+
+/* protoc -I=/Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs/proto --go_out=/Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs /Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs/proto/hdfs.proto */
+
+/* Register a username */
+message Request {
+  string directory = 1;
+  int32 chunk_size = 2;
+  int32 chunk_num = 3;
+  bool ack = 4;
+  map<int32, StorageInfoList> storage_info_per_chunk = 5; // chunk_id, list of storage node
+  operationType type = 6;
+
+  enum operationType {
+    GET = 0;
+    PUT = 1;
+    DELETE = 2;
+    LS = 3;
+  }
+}
+
+message StorageInfo {
+  string host = 1;
+  int32 port = 2;
+  bool isAlive = 3;
+}
+
+message StorageInfoList {
+  repeated StorageInfo storage_info = 1;
+}
+
+/* Heartbeat message */
+message Heartbeat {
+  int32 space_available = 1;
+}
+
+message Wrapper {
+  oneof msg {
+    Request request_message = 1;
+    Heartbeat hb_message = 2;
+  }
+}
