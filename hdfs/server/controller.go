@@ -1,10 +1,36 @@
-package server
+package main
 
 import (
 	"fmt"
+	"hdfs/message"
 	"log"
 	"net"
+	"strings"
 )
+
+func getDirectories(directory string) {
+	messageArr := strings.Split(directory, "/")
+
+	for i, s := range messageArr {
+		fmt.Println(i, s)
+	}
+}
+
+func handleClient(msgHandler *message.MessageHandler) {
+
+	for {
+		wrapper, _ := msgHandler.Receive()
+
+		switch msg := wrapper.Msg.(type) {
+		case *message.Wrapper_RequestMessage:
+			directory := msg.RequestMessage.GetDirectory()
+			getDirectories(directory)
+			fmt.Println(msg.RequestMessage.GetType())
+
+		case *message.Wrapper_HbMessage:
+		}
+	}
+}
 
 func main() {
 	//home := data_structure.New("home", "directory")
@@ -18,9 +44,8 @@ func main() {
 	for {
 		if conn, err := listener.Accept(); err == nil {
 
-			fmt.Print(conn)
-			//msgHandler := messages.NewMessageHandler(conn)
-			//go handleClient(msgHandler, &m)
+			msgHandler := message.NewMessageHandler(conn)
+			go handleClient(msgHandler)
 		}
 	}
 }

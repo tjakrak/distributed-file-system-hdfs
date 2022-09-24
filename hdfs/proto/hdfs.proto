@@ -4,13 +4,12 @@ option go_package = "./message";
 /* protoc -I=/Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs/proto --go_out=/Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs /Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs/proto/hdfs.proto */
 
 /* Register a username */
-message Request {
+message ClientRequest {
   string directory = 1;
-  int32 chunk_size = 2;
-  int32 chunk_num = 3;
-  bool ack = 4;
-  map<int32, StorageInfoList> storage_info_per_chunk = 5; // chunk_id, list of storage node
-  operationType type = 6;
+  int32 file_size = 2;
+  int32 chunk_size = 3;
+  map<int32, StorageInfoList> storage_info_per_chunk = 4; // chunk_id, list of storage node
+  operationType type = 5;
 
   enum operationType {
     GET = 0;
@@ -18,6 +17,23 @@ message Request {
     DELETE = 2;
     LS = 3;
   }
+}
+
+message ControllerResponse {
+  int32 chunk_num = 1;
+  bool ack = 2;
+  map<int32, StorageInfoList> storage_info_per_chunk = 3;
+}
+
+message StorageRequest {
+  string hashed_directory = 1;
+  int32 chunk_size = 2;
+}
+
+message StorageResponse {
+  bool ack = 1;
+  string checksum = 2;
+  string hashed_directory = 3;
 }
 
 message StorageInfo {
@@ -33,11 +49,14 @@ message StorageInfoList {
 /* Heartbeat message */
 message Heartbeat {
   int32 space_available = 1;
+  int32 storage = 2;
+  int32 retrievals = 3;
 }
 
 message Wrapper {
   oneof msg {
-    Request request_message = 1;
-    Heartbeat hb_message = 2;
+    ClientRequest client_message = 1;
+    ControllerResponse controller_message = 2;
+    Heartbeat hb_message = 3;
   }
 }

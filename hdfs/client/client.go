@@ -4,8 +4,10 @@ package main
 
 import (
 	"fmt"
+	"hdfs/message"
 	"log"
 	"math"
+	"net"
 	"os"
 	"strconv"
 )
@@ -25,7 +27,7 @@ func fileToChunk(filename string) *[][]byte {
 
 	// Getting the file size
 	fileInfo, _ := file.Stat()
-	var fileSize int64 = fileInfo.Size()
+	var fileSize = fileInfo.Size()
 
 	// 1 << 20 = 1 mb
 	const chunkSize = 128 * (1 << 20)
@@ -49,6 +51,7 @@ func fileToChunk(filename string) *[][]byte {
 }
 
 func main() {
+
 	var listOfChunks [][]byte = *fileToChunk("../../L2-tjakrak/log.txt")
 	log.Println("Number of parts: " + strconv.FormatInt(int64(len(listOfChunks)), 10))
 
@@ -69,5 +72,21 @@ func main() {
 	/*
 		file.writeAt go
 	*/
+
+	conn, err := net.Dial("tcp", "localhost:9999")
+
+	if err != nil {
+		log.Fatalln(err.Error())
+		return
+	}
+
+	msgHandler := message.NewMessageHandler(conn)
+
+	msg := message.Request{Directory: "test/hello/how", Type: 1}
+	wrapper := &message.Wrapper{
+		Msg: &message.Wrapper_RequestMessage{RequestMessage: &msg},
+	}
+
+	msgHandler.Send(wrapper)
 
 }
