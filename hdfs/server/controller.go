@@ -22,8 +22,8 @@ func handleClient(msgHandler *message.MessageHandler) {
 		wrapper, _ := msgHandler.Receive()
 
 		switch msg := wrapper.Msg.(type) {
-		case *message.Wrapper_RequestMessage:
-			directory := msg.RequestMessage.GetDirectory()
+		case *message.Wrapper_ControllerResMessage:
+			directory := msg.ControllerResMessage.GetDirectory()
 			getDirectories(directory)
 			fmt.Println(msg.RequestMessage.GetType())
 
