@@ -6,10 +6,11 @@ option go_package = "./message";
 /* Register a username */
 message ClientRequest {
   string directory = 1;
-  int32 file_size = 2;
-  int32 chunk_size = 3;
-  map<int32, StorageInfoList> storage_info_per_chunk = 4; // chunk_id, list of storage node
-  operationType type = 5;
+  string hashed_directory = 2;
+  int32 file_size = 3;
+  int32 chunk_size = 4;
+  map<int32, StorageInfoList> storage_info_per_chunk = 5; // chunk_id, list of storage node
+  operationType type = 6;
 
   enum operationType {
     GET = 0;
@@ -26,14 +27,14 @@ message ControllerResponse {
 }
 
 message StorageRequest {
-  string hashed_directory = 1;
-  int32 chunk_size = 2;
+  string hashed_directory = 2;
+  int32 chunk_size = 3;
 }
 
 message StorageResponse {
   bool ack = 1;
-  string checksum = 2;
-  string hashed_directory = 3;
+  string hashed_directory = 2;
+  string checksum = 3;
 }
 
 message StorageInfo {
@@ -55,8 +56,10 @@ message Heartbeat {
 
 message Wrapper {
   oneof msg {
-    ClientRequest client_message = 1;
-    ControllerResponse controller_message = 2;
-    Heartbeat hb_message = 3;
+    ClientRequest client_req_message = 1;
+    ControllerResponse controller_res_message = 2;
+    StorageResponse storage_req_message = 3;
+    StorageResponse storage_res_message = 4;
+    Heartbeat hb_message = 5;
   }
 }
