@@ -1,31 +1,30 @@
 package main
 
 import (
-	"fmt"
+	"hdfs/data_structure"
 	"hdfs/message"
 	"log"
 	"net"
-	"strings"
 )
 
-func getDirectories(directory string) {
-	messageArr := strings.Split(directory, "/")
-
-	for i, s := range messageArr {
-		fmt.Println(i, s)
-	}
-}
-
-func handleClient(msgHandler *message.MessageHandler) {
+func handleClient(msgHandler *message.MessageHandler, fileSystemTree *data_structure.FileSystemTree) {
 
 	for {
 		wrapper, _ := msgHandler.Receive()
 
 		switch msg := wrapper.Msg.(type) {
-		case *message.Wrapper_ControllerResMessage:
-			directory := msg.ControllerResMessage.GetDirectory()
-			getDirectories(directory)
-			fmt.Println(msg.RequestMessage.GetType())
+		case *message.Wrapper_ClientReqMessage:
+			directory := msg.ClientReqMessage.GetDirectory()
+
+			if msg.ClientReqMessage.Type == 0 { // GET
+
+			} else if msg.ClientReqMessage.Type == 1 { // PUT
+				fileSystemTree.PutFile(directory)
+			} else if msg.ClientReqMessage.Type == 2 { // DELETE
+
+			} else if msg.ClientReqMessage.Type == 1 { // LS
+				fileSystemTree.ShowFiles(directory)
+			}
 
 		case *message.Wrapper_HbMessage:
 		}
@@ -33,7 +32,7 @@ func handleClient(msgHandler *message.MessageHandler) {
 }
 
 func main() {
-	//home := data_structure.New("home", "directory")
+	fileSystemTree := data_structure.NewFileSystemTree()
 
 	listener, err := net.Listen("tcp", ":9999")
 	if err != nil {
@@ -43,9 +42,8 @@ func main() {
 
 	for {
 		if conn, err := listener.Accept(); err == nil {
-
 			msgHandler := message.NewMessageHandler(conn)
-			go handleClient(msgHandler)
+			go handleClient(msgHandler, fileSystemTree)
 		}
 	}
 }

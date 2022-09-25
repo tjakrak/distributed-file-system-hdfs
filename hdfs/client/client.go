@@ -82,9 +82,9 @@ func main() {
 
 	msgHandler := message.NewMessageHandler(conn)
 
-	msg := message.Request{Directory: "test/hello/how", Type: 1}
+	msg := message.ClientRequest{Directory: "test/hello/how", Type: 1}
 	wrapper := &message.Wrapper{
-		Msg: &message.Wrapper_RequestMessage{RequestMessage: &msg},
+		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
 	}
 
 	msgHandler.Send(wrapper)
