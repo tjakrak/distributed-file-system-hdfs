@@ -3,6 +3,13 @@ option go_package = "./message";
 
 /* protoc -I=/Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs/proto --go_out=/Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs /Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs/proto/hdfs.proto */
 
+enum operationType {
+  GET = 0;
+  PUT = 1;
+  DELETE = 2;
+  LS = 3;
+}
+
 /* Register a username */
 message ClientRequest {
   string directory = 1;
@@ -11,19 +18,13 @@ message ClientRequest {
   int32 chunk_size = 4;
   map<int32, StorageInfoList> storage_info_per_chunk = 5; // chunk_id, list of storage node
   operationType type = 6;
-
-  enum operationType {
-    GET = 0;
-    PUT = 1;
-    DELETE = 2;
-    LS = 3;
-  }
 }
 
 message ControllerResponse {
   int32 chunk_num = 1;
-  bool ack = 2;
+  repeated string file_list = 2;
   map<int32, StorageInfoList> storage_info_per_chunk = 3;
+  operationType type = 4;
 }
 
 message StorageRequest {

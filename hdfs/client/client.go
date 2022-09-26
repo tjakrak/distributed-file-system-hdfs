@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"time"
 )
 
 func fileToChunk(filename string) *[][]byte {
@@ -50,6 +51,38 @@ func fileToChunk(filename string) *[][]byte {
 	return &listOfChunks
 }
 
+func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
+
+	defer msgHandler.Close()
+	for {
+		wrapper, _ := msgHandler.Receive()
+
+		switch msg := wrapper.Msg.(type) {
+		case *message.Wrapper_ControllerResMessage:
+
+			if msg.ControllerResMessage.Type == 0 { // GET
+
+			} else if msg.ControllerResMessage.Type == 1 { // PUT
+
+			} else if msg.ControllerResMessage.Type == 2 { // DELETE
+
+			} else if msg.ControllerResMessage.Type == 3 { // LS
+				fileList := msg.ControllerResMessage.GetFileList()
+
+				for _, file := range fileList {
+					fmt.Println(file)
+				}
+			}
+		case *message.Wrapper_StorageResMessage:
+
+		case nil:
+			log.Println("Received an empty message, terminating server")
+		default:
+			log.Printf("Unexpected message type: %T", msg)
+		}
+	}
+}
+
 func main() {
 
 	var listOfChunks [][]byte = *fileToChunk("../../L2-tjakrak/log.txt")
@@ -82,11 +115,28 @@ func main() {
 
 	msgHandler := message.NewMessageHandler(conn)
 
-	msg := message.ClientRequest{Directory: "test/hello/how", Type: 1}
+	c := make(chan bool)
+	go handleIncomingConnection(msgHandler, c)
+
+	msg := message.ClientRequest{Directory: "test/hello/world.txt", Type: 1}
 	wrapper := &message.Wrapper{
 		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
 	}
 
 	msgHandler.Send(wrapper)
+
+	msg = message.ClientRequest{Directory: "test/hello/", Type: 3}
+	wrapper = &message.Wrapper{
+		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
+	}
+
+	msgHandler.Send(wrapper)
+
+	select {
+	case res := <-c:
+		fmt.Println(res)
+	case <-time.After(30 * time.Second):
+		fmt.Println("timeout")
+	}
 
 }

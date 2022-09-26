@@ -7,7 +7,7 @@ import (
 	"net"
 )
 
-func handleClient(msgHandler *message.MessageHandler, fileSystemTree *data_structure.FileSystemTree) {
+func handleIncomingConnection(msgHandler *message.MessageHandler, fileSystemTree *data_structure.FileSystemTree) {
 
 	for {
 		wrapper, _ := msgHandler.Receive()
@@ -19,11 +19,20 @@ func handleClient(msgHandler *message.MessageHandler, fileSystemTree *data_struc
 			if msg.ClientReqMessage.Type == 0 { // GET
 
 			} else if msg.ClientReqMessage.Type == 1 { // PUT
+				log.Println(directory)
 				fileSystemTree.PutFile(directory)
 			} else if msg.ClientReqMessage.Type == 2 { // DELETE
 
-			} else if msg.ClientReqMessage.Type == 1 { // LS
-				fileSystemTree.ShowFiles(directory)
+			} else if msg.ClientReqMessage.Type == 3 { // LS
+				log.Println(directory)
+				fileList, _ := fileSystemTree.ShowFiles(directory)
+
+				resMsg := message.ControllerResponse{FileList: fileList, Type: 3}
+				wrapper = &message.Wrapper{
+					Msg: &message.Wrapper_ControllerResMessage{ControllerResMessage: &resMsg},
+				}
+
+				msgHandler.Send(wrapper)
 			}
 
 		case *message.Wrapper_HbMessage:
@@ -43,7 +52,7 @@ func main() {
 	for {
 		if conn, err := listener.Accept(); err == nil {
 			msgHandler := message.NewMessageHandler(conn)
-			go handleClient(msgHandler, fileSystemTree)
+			go handleIncomingConnection(msgHandler, fileSystemTree)
 		}
 	}
 }
