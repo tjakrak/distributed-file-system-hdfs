@@ -5,6 +5,8 @@ import (
 	"hdfs/message"
 	"log"
 	"net"
+	"strconv"
+	"strings"
 )
 
 // Store storage node information
@@ -18,6 +20,11 @@ var fileSystemTree = data_structure.NewFileSystemTree()
 var idToLocation = make(map[int]storageNode)
 var storageLocation = make(map[string]bool)
 var sizePerChunk = 128
+var latestId = 0
+
+var f = func(c rune) bool {
+	return c == ':'
+}
 
 func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
@@ -47,7 +54,24 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 			}
 
 		case *message.Wrapper_HbMessage:
+			id := msg.HbMessage.GetId()
 
+			// Id equals 0 means the storage node has not registered yet
+			if id == 0 {
+				hostAndPort := msg.HbMessage.GetHostAndPort()
+				if storageLocation[hostAndPort] == true {
+					// send error that host and port already registered
+				}
+
+				hostAndPortArr := strings.FieldsFunc(hostAndPort, f)
+				host := hostAndPortArr[0]
+				port, _ := strconv.Atoi(hostAndPortArr[1])
+				assignedId := latestId + 1
+				sn := storageNode{host, port, true}
+
+				idToLocation[assignedId] = sn
+				storageLocation[hostAndPort] = true
+			}
 		}
 	}
 }

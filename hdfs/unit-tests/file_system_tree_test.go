@@ -103,6 +103,22 @@ func TestPutFileSuccess(t *testing.T) {
 func TestPutFileFail(t *testing.T) {
 	fileSystemTree := data_structure.NewFileSystemTree()
 	_, err := fileSystemTree.PutFile("/hello/world.txt")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(3)
+	}
+
+	_, err = fileSystemTree.PutFile("/hello/world.txt")
+	fmt.Println(err)
+
+	if err == nil {
+		t.Errorf("File already exist, not allowed to have duplicate")
+	}
+}
+
+func TestLsFileFail(t *testing.T) {
+	fileSystemTree := data_structure.NewFileSystemTree()
+	_, err := fileSystemTree.PutFile("/hello/world.txt")
 
 	if err != nil {
 		fmt.Println(err)
@@ -110,6 +126,7 @@ func TestPutFileFail(t *testing.T) {
 	}
 
 	_, err = fileSystemTree.ShowFiles("/hello/world.txt")
+	fmt.Println(err)
 
 	if err == nil {
 		t.Errorf("Not a directory, should not show anything")

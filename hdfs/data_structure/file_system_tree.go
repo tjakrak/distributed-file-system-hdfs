@@ -44,7 +44,7 @@ func (fst *FileSystemTree) PutFile(filePath string) (*node, error) {
 			if i < (totalFiles - 1) {
 				currFile = currFile.GetChild(file)
 			} else {
-				return nil, errors.New("File already exist: " + currFile.GetName())
+				return nil, errors.New("File already exist: " + currFile.GetChild(file).GetName())
 			}
 		}
 	}

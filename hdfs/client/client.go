@@ -129,18 +129,20 @@ func main() {
 		file.writeAt go
 	*/
 
+	// Establish connection to the controller
 	conn, err := net.Dial("tcp", "localhost:9999")
-
 	if err != nil {
 		log.Fatalln(err.Error())
 		return
 	}
 
 	msgHandler := message.NewMessageHandler(conn)
-
 	c := make(chan bool)
+
+	// Listening to any messages in the connection
 	go handleIncomingConnection(msgHandler, c)
 
+	// Send a request message to the server
 	msg := message.ClientRequest{Directory: "test/hello/world.txt", Type: 1}
 	wrapper := &message.Wrapper{
 		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
