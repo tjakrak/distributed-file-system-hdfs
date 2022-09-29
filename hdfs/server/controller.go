@@ -7,7 +7,19 @@ import (
 	"net"
 )
 
-func handleIncomingConnection(msgHandler *message.MessageHandler, fileSystemTree *data_structure.FileSystemTree) {
+// Store storage node information
+type storageNode struct {
+	hostname string
+	port     int
+	isAlive  bool
+}
+
+var fileSystemTree = data_structure.NewFileSystemTree()
+var idToLocation = make(map[int]storageNode)
+var storageLocation = make(map[string]bool)
+var sizePerChunk = 128
+
+func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
 	for {
 		wrapper, _ := msgHandler.Receive()
@@ -15,16 +27,15 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, fileSystemTree
 		switch msg := wrapper.Msg.(type) {
 		case *message.Wrapper_ClientReqMessage:
 			directory := msg.ClientReqMessage.GetDirectory()
+			log.Println(directory)
 
 			if msg.ClientReqMessage.Type == 0 { // GET
 
 			} else if msg.ClientReqMessage.Type == 1 { // PUT
-				log.Println(directory)
 				fileSystemTree.PutFile(directory)
 			} else if msg.ClientReqMessage.Type == 2 { // DELETE
-
+				fileSystemTree.DeleteFile(directory)
 			} else if msg.ClientReqMessage.Type == 3 { // LS
-				log.Println(directory)
 				fileList, _ := fileSystemTree.ShowFiles(directory)
 
 				resMsg := message.ControllerResponse{FileList: fileList, Type: 3}
@@ -36,12 +47,12 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, fileSystemTree
 			}
 
 		case *message.Wrapper_HbMessage:
+
 		}
 	}
 }
 
 func main() {
-	fileSystemTree := data_structure.NewFileSystemTree()
 
 	listener, err := net.Listen("tcp", ":9999")
 	if err != nil {
@@ -52,7 +63,7 @@ func main() {
 	for {
 		if conn, err := listener.Accept(); err == nil {
 			msgHandler := message.NewMessageHandler(conn)
-			go handleIncomingConnection(msgHandler, fileSystemTree)
+			go handleIncomingConnection(msgHandler)
 		}
 	}
 }

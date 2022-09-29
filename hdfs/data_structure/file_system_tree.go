@@ -9,6 +9,10 @@ type FileSystemTree struct {
 	root *node
 }
 
+var f = func(c rune) bool {
+	return c == '/'
+}
+
 func NewFileSystemTree() *FileSystemTree {
 	tree := FileSystemTree{NewNode("/", "directory")}
 
@@ -16,13 +20,10 @@ func NewFileSystemTree() *FileSystemTree {
 }
 
 func (fst *FileSystemTree) PutFile(filePath string) (*node, error) {
-	f := func(c rune) bool {
-		return c == '/'
-	}
 	filePathArr := strings.FieldsFunc(filePath, f)
 
 	currFile := fst.root
-	filePathLen := len(filePathArr) - 1
+	totalFiles := len(filePathArr)
 	// Iterating file path
 	for i, file := range filePathArr {
 
@@ -30,7 +31,7 @@ func (fst *FileSystemTree) PutFile(filePath string) (*node, error) {
 		if !currFile.IsChildExist(file) {
 
 			var n *node
-			if i < filePathLen {
+			if i < (totalFiles - 1) {
 				n = NewNode(file, "directory")
 			} else {
 				n = NewNode(file, "file")
@@ -40,7 +41,7 @@ func (fst *FileSystemTree) PutFile(filePath string) (*node, error) {
 			currFile = n
 		} else {
 
-			if i < filePathLen {
+			if i < (totalFiles - 1) {
 				currFile = currFile.GetChild(file)
 			} else {
 				return nil, errors.New("File already exist: " + currFile.GetName())
@@ -51,10 +52,35 @@ func (fst *FileSystemTree) PutFile(filePath string) (*node, error) {
 	return currFile, nil
 }
 
-func (fst *FileSystemTree) ShowFiles(filePath string) ([]string, error) {
-	f := func(c rune) bool {
-		return c == '/'
+func (fst *FileSystemTree) DeleteFile(filePath string) (bool, error) {
+	filePathArr := strings.FieldsFunc(filePath, f)
+
+	currFile := fst.root
+	totalFiles := len(filePathArr)
+	// Iterating file path
+	for i, file := range filePathArr {
+		if !currFile.IsChildExist(file) {
+			return false, errors.New("No such file or directories: " + file)
+		} else {
+			// Delete if we reach the destination file
+			if i >= totalFiles-1 {
+				currFile.DeleteChild(file)
+			} else {
+				temp := currFile.GetChild(file)
+
+				if temp.GetFileType() == "file" {
+					return false, errors.New("Not a directory: " + file)
+				} else {
+					currFile = temp
+				}
+			}
+		}
 	}
+
+	return true, nil
+}
+
+func (fst *FileSystemTree) ShowFiles(filePath string) ([]string, error) {
 	filePathArr := strings.FieldsFunc(filePath, f)
 
 	currFile := fst.root

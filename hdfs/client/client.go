@@ -73,6 +73,8 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 					fmt.Println(file)
 				}
 			}
+
+			c <- true
 		case *message.Wrapper_StorageResMessage:
 
 		case nil:
@@ -81,6 +83,27 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 			log.Printf("Unexpected message type: %T", msg)
 		}
 	}
+}
+
+func sendRequest(msgHandler *message.MessageHandler, command string, path string) {
+
+	var msg = message.ClientRequest{}
+	switch command {
+	case "-get":
+
+	case "-put":
+
+	case "-rm":
+		msg = message.ClientRequest{Directory: path, Type: 2}
+	case "-ls":
+		msg = message.ClientRequest{Directory: path, Type: 3}
+	}
+
+	wrapper := &message.Wrapper{
+		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
+	}
+
+	msgHandler.Send(wrapper)
 }
 
 func main() {
@@ -125,12 +148,12 @@ func main() {
 
 	msgHandler.Send(wrapper)
 
-	msg = message.ClientRequest{Directory: "test/hello/", Type: 3}
-	wrapper = &message.Wrapper{
-		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
-	}
-
-	msgHandler.Send(wrapper)
+	//msg = message.ClientRequest{Directory: "test/hello/", Type: 3}
+	//wrapper = &message.Wrapper{
+	//	Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
+	//}
+	//
+	//msgHandler.Send(wrapper)
 
 	select {
 	case res := <-c:
