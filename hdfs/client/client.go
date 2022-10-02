@@ -64,6 +64,16 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 
 			} else if msg.ControllerResMessage.Type == 1 { // PUT
 
+				storageInfoListPerChunk := msg.ControllerResMessage.GetStorageInfoPerChunk()
+
+				for key, val := range storageInfoListPerChunk {
+					fmt.Println(key)
+					fmt.Println(val.GetStorageInfo())
+					for _, v := range val.GetStorageInfo() {
+						fmt.Println(v.Host)
+					}
+				}
+
 			} else if msg.ControllerResMessage.Type == 2 { // DELETE
 
 			} else if msg.ControllerResMessage.Type == 3 { // LS
@@ -143,7 +153,7 @@ func main() {
 	go handleIncomingConnection(msgHandler, c)
 
 	// Send a request message to the server
-	msg := message.ClientRequest{Directory: "test/hello/world.txt", Type: 1}
+	msg := message.ClientRequest{Directory: "test/hello/world.txt", FileSize: 450, Type: 1}
 	wrapper := &message.Wrapper{
 		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
 	}

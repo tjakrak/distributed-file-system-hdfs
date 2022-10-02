@@ -73,10 +73,14 @@ func TestNodeChildExistFalse(t *testing.T) {
 func TestNodeAddChunk(t *testing.T) {
 	n := data_structure.NewNode("hello", "file")
 	chunkId := 1
-	storageId := []int{1, 2, 3}
+	storageId := []int32{1, 2, 3}
+	chunkIdToLocation := make(map[int][]int32)
+	chunkIdToLocation[chunkId] = storageId
 
-	n.AddChunk(chunkId, storageId)
+	n.AddChunks(chunkIdToLocation)
+
 	actual, _ := n.GetChunk()
+	fmt.Println(actual)
 
 	if !reflect.DeepEqual(actual[1], storageId) {
 		t.Errorf("actual %v, expected %v", actual, storageId)
@@ -85,7 +89,7 @@ func TestNodeAddChunk(t *testing.T) {
 
 func TestPutFileSuccess(t *testing.T) {
 	fileSystemTree := data_structure.NewFileSystemTree()
-	_, err := fileSystemTree.PutFile("/hello/world.txt")
+	_, err := fileSystemTree.PutFile("/hello/world.txt", nil)
 
 	if err != nil {
 		fmt.Println(err)
@@ -102,13 +106,13 @@ func TestPutFileSuccess(t *testing.T) {
 
 func TestPutFileFail(t *testing.T) {
 	fileSystemTree := data_structure.NewFileSystemTree()
-	_, err := fileSystemTree.PutFile("/hello/world.txt")
+	_, err := fileSystemTree.PutFile("/hello/world.txt", nil)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(3)
 	}
 
-	_, err = fileSystemTree.PutFile("/hello/world.txt")
+	_, err = fileSystemTree.PutFile("/hello/world.txt", nil)
 	fmt.Println(err)
 
 	if err == nil {
@@ -116,9 +120,25 @@ func TestPutFileFail(t *testing.T) {
 	}
 }
 
+func TestDeleteFileSuccess(t *testing.T) {
+	fileSystemTree := data_structure.NewFileSystemTree()
+	_, err := fileSystemTree.PutFile("/hello/world.txt", nil)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(3)
+	}
+
+	actual, _ := fileSystemTree.DeleteFile("/hello/world.txt")
+	expected := true
+
+	if actual != expected {
+		t.Errorf("actual %t, expected %t", actual, expected)
+	}
+}
+
 func TestLsFileFail(t *testing.T) {
 	fileSystemTree := data_structure.NewFileSystemTree()
-	_, err := fileSystemTree.PutFile("/hello/world.txt")
+	_, err := fileSystemTree.PutFile("/hello/world.txt", nil)
 
 	if err != nil {
 		fmt.Println(err)

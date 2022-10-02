@@ -52,7 +52,7 @@ message StorageInfoList {
 message Heartbeat {
   int32 id = 1;
   string host_and_port = 2;
-  int32 space_available = 3;
+  uint64 space_available = 3;
   int32 storage = 4;
   int32 retrievals = 5;
 }

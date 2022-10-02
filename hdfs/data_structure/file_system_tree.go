@@ -19,11 +19,39 @@ func NewFileSystemTree() *FileSystemTree {
 	return &tree
 }
 
-func (fst *FileSystemTree) PutFile(filePath string) (*node, error) {
+func (fst *FileSystemTree) GetFile(filePath string) (bool, error) {
 	filePathArr := strings.FieldsFunc(filePath, f)
-
 	currFile := fst.root
 	totalFiles := len(filePathArr)
+
+	// Iterating file path
+	for i, file := range filePathArr {
+		if !currFile.IsChildExist(file) {
+			return false, errors.New("No such file or directories: " + file)
+		} else {
+			// Get if we reach the destination file
+			if i >= totalFiles-1 {
+				currFile.DeleteChild(file)
+			} else {
+				temp := currFile.GetChild(file)
+
+				if temp.GetFileType() == "file" {
+					return false, errors.New("Not a directory: " + file)
+				} else {
+					currFile = temp
+				}
+			}
+		}
+	}
+
+	return true, nil
+}
+
+func (fst *FileSystemTree) PutFile(filePath string, chunkIdToLocation map[int][]int32) (*node, error) {
+	filePathArr := strings.FieldsFunc(filePath, f)
+	currFile := fst.root
+	totalFiles := len(filePathArr)
+
 	// Iterating file path
 	for i, file := range filePathArr {
 
@@ -35,6 +63,7 @@ func (fst *FileSystemTree) PutFile(filePath string) (*node, error) {
 				n = NewNode(file, "directory")
 			} else {
 				n = NewNode(file, "file")
+				n.AddChunks(chunkIdToLocation)
 			}
 
 			currFile.AddChild(n)
@@ -54,9 +83,9 @@ func (fst *FileSystemTree) PutFile(filePath string) (*node, error) {
 
 func (fst *FileSystemTree) DeleteFile(filePath string) (bool, error) {
 	filePathArr := strings.FieldsFunc(filePath, f)
-
 	currFile := fst.root
 	totalFiles := len(filePathArr)
+
 	// Iterating file path
 	for i, file := range filePathArr {
 		if !currFile.IsChildExist(file) {
@@ -82,8 +111,8 @@ func (fst *FileSystemTree) DeleteFile(filePath string) (bool, error) {
 
 func (fst *FileSystemTree) ShowFiles(filePath string) ([]string, error) {
 	filePathArr := strings.FieldsFunc(filePath, f)
-
 	currFile := fst.root
+
 	for _, file := range filePathArr {
 		if !currFile.IsChildExist(file) {
 			return nil, errors.New("No such file or directories: " + file)
@@ -109,17 +138,15 @@ func (fst *FileSystemTree) ShowFiles(filePath string) ([]string, error) {
 
 type node struct {
 	name     string
-	fileType string        // filetype to indicate directory or a file
-	chunk    map[int][]int // int will be node id
+	fileType string          // filetype to indicate directory or a file
+	chunks   map[int][]int32 // key: chunkId | val: will be node id
 	children map[string]*node
 }
 
 func NewNode(name string, fileType string) *node {
 	n := node{name, fileType, nil, nil}
 
-	if fileType == "file" {
-		n.chunk = make(map[int][]int)
-	} else if fileType == "directory" {
+	if fileType == "directory" {
 		n.children = make(map[string]*node)
 	}
 
@@ -134,12 +161,12 @@ func (n *node) GetFileType() string {
 	return n.fileType
 }
 
-func (n *node) GetChunk() (map[int][]int, error) {
+func (n *node) GetChunk() (map[int][]int32, error) {
 	if n.fileType == "directory" {
 		return nil, errors.New("Not a file: " + n.GetName())
 	}
 
-	return n.chunk, nil
+	return n.chunks, nil
 }
 
 func (n *node) GetChild(childName string) *node {
@@ -154,8 +181,8 @@ func (n *node) GetChildren() (map[string]*node, error) {
 	return n.children, nil
 }
 
-func (n *node) AddChunk(chunkId int, storageId []int) {
-	n.chunk[chunkId] = storageId
+func (n *node) AddChunks(chunks map[int][]int32) {
+	n.chunks = chunks
 }
 
 func (n *node) AddChild(child *node) {
