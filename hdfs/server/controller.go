@@ -22,7 +22,7 @@ type storageNode struct {
 	spaceAvail uint64
 }
 
-const sizePerChunk = 128
+const sizePerChunk int = 128000000 // 128 mb
 const rep = 3
 
 var fileSystemTree = data_structure.NewFileSystemTree()
@@ -32,7 +32,7 @@ var snLocation = make(map[string]bool)
 
 //var snLatestId = 0
 
-var snLatestId = 3
+var snLatestId = 0
 
 var f = func(c rune) bool {
 	return c == ':'
@@ -52,7 +52,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
 			} else if msg.ClientReqMessage.Type == 1 { // PUT
 				fileSize := msg.ClientReqMessage.GetFileSize()
-				numOfChunks := int(math.Ceil(float64(fileSize) / sizePerChunk))
+				numOfChunks := int(math.Ceil(float64(fileSize) / float64(sizePerChunk)))
 				chunkIdToSNIdList := make(map[int][]int32)
 				chunkIdToSNInfo := make(map[int32]*message.StorageInfoList)
 
@@ -60,19 +60,28 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 				for i := 0; i < numOfChunks; i++ {
 					snIdList := make([]int32, rep)
 					snRandIdList := getRandNumber()
-					storageInfoList := &message.StorageInfoList{}
+					storageInfoList := new(message.StorageInfoList)
 
-					// Each chunk will have three storage node
+					lastCheckedIndex := 0
+					// Getting three node storage
 					for j := 0; j < rep; j++ {
+						for k := lastCheckedIndex; k < len(snRandIdList); k++ {
+							id := snRandIdList[k]
 
-						for _, id := range snRandIdList {
 							if snIdToMemberInfo[id].isAlive {
 								host := snIdToMemberInfo[id].hostname
 								port := snIdToMemberInfo[id].port
 
+								if j == 0 {
+									log.Printf("Send put request to: %d\n", id)
+								}
+
 								snIdList[j] = int32(id)
 								storageInfo := message.StorageInfo{Host: host, Port: port, IsAlive: true}
 								storageInfoList.StorageInfo = append(storageInfoList.StorageInfo, &storageInfo)
+
+								lastCheckedIndex = k + 1
+								break
 							}
 						}
 					}
@@ -81,13 +90,18 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 					chunkIdToSNInfo[int32(i)] = storageInfoList
 				}
 
-				fileSystemTree.PutFile(directory, chunkIdToSNIdList)
-
 				resMsg := message.ControllerResponse{
-					ChunkNum:            int32(numOfChunks),
+					ChunkSize:           uint64(sizePerChunk),
 					FileList:            nil,
 					StorageInfoPerChunk: chunkIdToSNInfo,
 					Type:                1,
+				}
+
+				_, err := fileSystemTree.PutFile(directory, chunkIdToSNIdList)
+
+				if err != nil {
+					log.Println(err)
+					resMsg = message.ControllerResponse{Error: err.Error(), Type: 1}
 				}
 
 				sendControllerResponseMsg(msgHandler, &resMsg)
@@ -193,33 +207,33 @@ func sendHeartbeatMsg(msgHandler *message.MessageHandler, msg *message.Heartbeat
 
 func main() {
 
-	sn1 := storageNode{
-		hostname:   "A",
-		port:       1111,
-		isAlive:    true,
-		lastHB:     time.Time{},
-		spaceAvail: 0,
-	}
-
-	sn2 := storageNode{
-		hostname:   "B",
-		port:       2222,
-		isAlive:    true,
-		lastHB:     time.Time{},
-		spaceAvail: 0,
-	}
-
-	sn3 := storageNode{
-		hostname:   "C",
-		port:       3333,
-		isAlive:    true,
-		lastHB:     time.Time{},
-		spaceAvail: 0,
-	}
-
-	snIdToMemberInfo[1] = &sn1
-	snIdToMemberInfo[2] = &sn2
-	snIdToMemberInfo[3] = &sn3
+	//sn1 := storageNode{
+	//	hostname:   "A",
+	//	port:       1111,
+	//	isAlive:    true,
+	//	lastHB:     time.Time{},
+	//	spaceAvail: 0,
+	//}
+	//
+	//sn2 := storageNode{
+	//	hostname:   "B",
+	//	port:       2222,
+	//	isAlive:    true,
+	//	lastHB:     time.Time{},
+	//	spaceAvail: 0,
+	//}
+	//
+	//sn3 := storageNode{
+	//	hostname:   "C",
+	//	port:       3333,
+	//	isAlive:    true,
+	//	lastHB:     time.Time{},
+	//	spaceAvail: 0,
+	//}
+	//
+	//snIdToMemberInfo[1] = &sn1
+	//snIdToMemberInfo[2] = &sn2
+	//snIdToMemberInfo[3] = &sn3
 
 	go heartBeatChecker(5 * time.Second)
 

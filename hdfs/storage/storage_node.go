@@ -1,19 +1,24 @@
 package main
 
 import (
+	"fmt"
 	"golang.org/x/sys/unix"
 	"hdfs/message"
 	"log"
 	"net"
 	"os"
+	"strconv"
+	"sync"
 	"time"
 )
 
 var thisId int32 = 0
+var thisDir = ""
 var thisStorage = 0
 var thisRetrieval = 0
+var thisHostAndPort = "localhost:9998"
 
-func handleIncomingConnection(msgHandler *message.MessageHandler) {
+func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 
 	defer msgHandler.Close()
 	for {
@@ -21,6 +26,40 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
 		switch msg := wrapper.Msg.(type) {
 		case *message.Wrapper_ClientReqMessage:
+			if msg.ClientReqMessage.Type == 0 { // GET
+			} else if msg.ClientReqMessage.Type == 1 { // PUT
+				hashedDir := msg.ClientReqMessage.GetHashedDirectory()
+				chunk := msg.ClientReqMessage.GetChunk()
+				chunkIdToSNInfo := msg.ClientReqMessage.GetStorageInfoPerChunk()
+
+				isStored := storeChunk(hashedDir, chunk)
+				isReplicated := replicateChunk(hashedDir, chunk, chunkIdToSNInfo)
+
+				if isStored && isReplicated {
+					sendAck(msgHandler)
+				}
+				//storageInfoListPerChunk := msg.ClientReqMessage.GetStorageInfoPerChunk()
+
+			} else if msg.ClientReqMessage.Type == 2 { // DELETE
+			}
+
+		case *message.Wrapper_StorageReqMessage:
+			hashedDir := msg.StorageReqMessage.GetHashedDirectory()
+			chunk := msg.StorageReqMessage.GetChunk()
+
+			fmt.Println(hashedDir)
+			isStored := storeChunk(hashedDir, chunk)
+
+			if isStored {
+				sendAck(msgHandler)
+			}
+
+		case *message.Wrapper_StorageResMessage:
+			isAck := msg.StorageResMessage.GetAck()
+
+			if isAck {
+				c <- true
+			}
 
 		case *message.Wrapper_HbMessage:
 			id := msg.HbMessage.GetId()
@@ -32,7 +71,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
 		case nil:
 			log.Println("Received an empty message, terminating server")
-			os.Exit(3)
+			time.Sleep(30 * time.Second)
 		default:
 			log.Printf("Unexpected message type: %T", msg)
 		}
@@ -43,16 +82,16 @@ func listenToIncomingConnection(listener net.Listener) {
 	for {
 		if conn, err := listener.Accept(); err == nil {
 			msgHandler := message.NewMessageHandler(conn)
-			go handleIncomingConnection(msgHandler)
+			go handleIncomingConnection(msgHandler, nil)
 		}
 	}
 }
 
-func startHeartBeat(conn net.Conn, hostAndPort string) {
+func startHeartBeat(conn net.Conn) {
 	msgHandler := message.NewMessageHandler(conn)
 	defer msgHandler.Close()
 
-	go handleIncomingConnection(msgHandler)
+	go handleIncomingConnection(msgHandler, nil)
 
 	ticker := time.NewTicker(3 * time.Second)
 
@@ -65,7 +104,7 @@ func startHeartBeat(conn net.Conn, hostAndPort string) {
 			spaceAvail := stat.Bavail * uint64(stat.Bsize)
 
 			// Send request to the controller
-			msg := message.Heartbeat{Id: thisId, HostAndPort: hostAndPort, SpaceAvailable: spaceAvail}
+			msg := message.Heartbeat{Id: thisId, HostAndPort: thisHostAndPort, SpaceAvailable: spaceAvail}
 			wrapper := &message.Wrapper{
 				Msg: &message.Wrapper_HbMessage{HbMessage: &msg},
 			}
@@ -75,20 +114,86 @@ func startHeartBeat(conn net.Conn, hostAndPort string) {
 	}
 }
 
-func storeChunk(fileName string, chunkByte []byte) {
+func sendAck(msgHandler *message.MessageHandler) {
+	msg := message.StorageResponse{Ack: true, Type: 1}
+	wrapper := &message.Wrapper{
+		Msg: &message.Wrapper_StorageResMessage{StorageResMessage: &msg},
+	}
+	msgHandler.Send(wrapper)
+}
+
+func storeChunk(fileName string, chunkByte []byte) bool {
 	// write to disk
-	f, err := os.Create(fileName)
+	f, err := os.Create(thisDir + fileName)
 
 	if err != nil {
 		log.Println(err)
-		os.Exit(1)
+		return false
 	}
 
 	defer f.Close()
 
 	// write/save buffer to disk
 	os.WriteFile(fileName, chunkByte, os.ModeAppend)
+	return true
+}
 
+func replicateChunk(hashedDir string, chunk []byte, chunkIdToSNInfo map[int32]*message.StorageInfoList) bool {
+	var wg sync.WaitGroup
+
+	// Iterating through each chunkId and storage location to store the chunk
+	for key, val := range chunkIdToSNInfo {
+		for i, v := range val.GetStorageInfo() {
+			if i > 0 {
+				host := v.Host
+				port := v.Port
+				hostAndPort := host + ":" + strconv.FormatInt(int64(port), 10)
+
+				wg.Add(1)
+				go sendRequestStorage(hostAndPort, key, hashedDir, chunk, &wg)
+			}
+		}
+	}
+
+	wg.Wait()
+	fmt.Println("Done")
+	return true
+}
+
+func sendRequestStorage(hostAndPort string, chunkId int32, chunkName string, chunk []byte, wg *sync.WaitGroup) {
+
+	conn, err := net.Dial("tcp", hostAndPort)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return
+	}
+
+	msgHandler := message.NewMessageHandler(conn)
+	c := make(chan bool)
+
+	// Listening response from storage
+	go handleIncomingConnection(msgHandler, c)
+
+	msg := message.StorageRequest{
+		HashedDirectory: chunkName,
+		ChunkSize:       uint64(len(chunk)),
+		Chunk:           chunk,
+	}
+
+	wrapper := &message.Wrapper{
+		Msg: &message.Wrapper_StorageReqMessage{StorageReqMessage: &msg},
+	}
+
+	msgHandler.Send(wrapper)
+
+	select {
+	case res := <-c:
+		fmt.Printf("replicate successful %t\n", res)
+	case <-time.After(30 * time.Second):
+		fmt.Println("timeout")
+	}
+
+	wg.Done()
 }
 
 func main() {
@@ -114,7 +219,7 @@ func main() {
 		log.Fatalln(err.Error())
 		return
 	}
-	go startHeartBeat(conn, "localhost:9999")
+	go startHeartBeat(conn)
 
 	// Establish storage node server
 	listener, err := net.Listen("tcp", ":9998")

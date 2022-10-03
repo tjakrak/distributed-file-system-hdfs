@@ -3,6 +3,7 @@ package main
 /* Source: https://socketloop.com/tutorials/golang-how-to-split-or-chunking-a-file-to-smaller-pieces */
 
 import (
+	"encoding/base64"
 	"fmt"
 	"hdfs/message"
 	"log"
@@ -13,8 +14,10 @@ import (
 	"time"
 )
 
-func fileToChunk(filename string) *[][]byte {
-	var listOfChunks [][]byte
+var directory = ""
+
+func fileToChunk(filename string, chunkSize uint64) [][]byte {
+	var chunkList [][]byte
 
 	// Open the file if it exists
 	file, err := os.Open(filename)
@@ -30,25 +33,21 @@ func fileToChunk(filename string) *[][]byte {
 	fileInfo, _ := file.Stat()
 	var fileSize = fileInfo.Size()
 
-	// 1 << 20 = 1 mb
-	const chunkSize = 128 * (1 << 20)
-
 	// Calculate total number of parts the file will be chunked into
 	totalChunk := uint64(math.Ceil(float64(fileSize) / float64(chunkSize)))
-	fmt.Println(totalChunk)
 
 	// Iterate until all bytes are read
 	for i := uint64(0); i < totalChunk; i++ {
 
-		currChunkSize := int(math.Min(chunkSize, float64(fileSize-int64(i*chunkSize))))
+		currChunkSize := int(math.Min(float64(chunkSize), float64(fileSize-int64(i*chunkSize))))
 		currChunk := make([]byte, currChunkSize) // byte array
 
 		file.Read(currChunk)
 
-		listOfChunks = append(listOfChunks, currChunk)
+		chunkList = append(chunkList, currChunk)
 	}
 
-	return &listOfChunks
+	return chunkList
 }
 
 func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
@@ -64,13 +63,30 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 
 			} else if msg.ControllerResMessage.Type == 1 { // PUT
 
-				storageInfoListPerChunk := msg.ControllerResMessage.GetStorageInfoPerChunk()
+				// If file already exist
+				err := msg.ControllerResMessage.GetError()
+				if err != "" {
+					fmt.Println(err)
+					c <- true
+					break
+				}
 
-				for key, val := range storageInfoListPerChunk {
-					fmt.Println(key)
-					fmt.Println(val.GetStorageInfo())
+				chunkIdToSNInfo := msg.ControllerResMessage.GetStorageInfoPerChunk()
+				chunkSize := msg.ControllerResMessage.GetChunkSize()
+
+				chunkList := fileToChunk(directory, chunkSize)
+
+				// Iterating through each chunkId and storage location to store the chunk
+				for key, val := range chunkIdToSNInfo {
+					fmt.Println(val)
 					for _, v := range val.GetStorageInfo() {
-						fmt.Println(v.Host)
+						host := v.Host
+						port := v.Port
+						hostAndPort := host + ":" + strconv.FormatInt(int64(port), 10)
+						encodedChunkName := base64.StdEncoding.EncodeToString([]byte(directory + "-" + strconv.FormatInt(int64(key), 10)))
+
+						sendRequestStorage(hostAndPort, key, encodedChunkName, chunkList[0], val)
+						break
 					}
 				}
 
@@ -82,20 +98,30 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 				for _, file := range fileList {
 					fmt.Println(file)
 				}
+
 			}
 
 			c <- true
+
 		case *message.Wrapper_StorageResMessage:
+			if msg.StorageResMessage.Type == 0 { // GET
+
+			} else if msg.StorageResMessage.Type == 1 { // PUT
+				fmt.Println("success")
+			}
+
+			c <- true
 
 		case nil:
 			log.Println("Received an empty message, terminating server")
+			os.Exit(3)
 		default:
 			log.Printf("Unexpected message type: %T", msg)
 		}
 	}
 }
 
-func sendRequest(msgHandler *message.MessageHandler, command string, path string) {
+func sendRequestController(msgHandler *message.MessageHandler, command string, path string) {
 
 	var msg = message.ClientRequest{}
 	switch command {
@@ -116,24 +142,52 @@ func sendRequest(msgHandler *message.MessageHandler, command string, path string
 	msgHandler.Send(wrapper)
 }
 
+func sendRequestStorage(hostAndPort string, chunkId int32, chunkName string, chunk []byte, storageInfoList *message.StorageInfoList) {
+	conn, err := net.Dial("tcp", hostAndPort)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return
+	}
+
+	msgHandler := message.NewMessageHandler(conn)
+	c := make(chan bool)
+
+	// Listening response from storage
+	go handleIncomingConnection(msgHandler, c)
+
+	// Send request to storage
+	chunkIdToSNInfo := make(map[int32]*message.StorageInfoList)
+	chunkIdToSNInfo[chunkId] = storageInfoList
+
+	fmt.Println("LENGTH OF")
+	fmt.Println(len(storageInfoList.GetStorageInfo()))
+
+	msg := message.ClientRequest{
+		HashedDirectory:     chunkName,
+		ChunkSize:           uint64(len(chunk)),
+		Chunk:               chunk,
+		Type:                1,
+		StorageInfoPerChunk: chunkIdToSNInfo,
+	}
+
+	wrapper := &message.Wrapper{
+		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
+	}
+
+	msgHandler.Send(wrapper)
+
+	select {
+	case res := <-c:
+		fmt.Printf("sub channel %t\n", res)
+	case <-time.After(30 * time.Second):
+		fmt.Println("sub timeout")
+	}
+}
+
 func main() {
 
-	var listOfChunks [][]byte = *fileToChunk("../../L2-tjakrak/log.txt")
+	var listOfChunks [][]byte = fileToChunk("../../L2-tjakrak/log.txt", 128*(1<<20))
 	log.Println("Number of parts: " + strconv.FormatInt(int64(len(listOfChunks)), 10))
-
-	//for i := 0; i < len(listOfChunks); i++ {
-	//	// write to disk
-	//	fileName := "filePart_" + strconv.FormatInt(int64(i), 10)
-	//	_, err := os.Create(fileName)
-	//
-	//	if err != nil {
-	//		fmt.Println(err)
-	//		os.Exit(1)
-	//	}
-	//
-	//	// write/save buffer to disk
-	//	os.WriteFile(fileName, listOfChunks[i], os.ModeAppend)
-	//}
 
 	/*
 		file.writeAt go
@@ -153,7 +207,20 @@ func main() {
 	go handleIncomingConnection(msgHandler, c)
 
 	// Send a request message to the server
-	msg := message.ClientRequest{Directory: "test/hello/world.txt", FileSize: 450, Type: 1}
+	directory = "../../L2-tjakrak/log.txt"
+	// directory = "/Users/ryantjakrakartadinata/go/src/L2-tjakrak/large-log.txt"
+	file, err := os.Open(directory) // For read access.
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	fStat, err := file.Stat()
+	size := fStat.Size()
+	fmt.Println(size)
+
+	// send request to controller
+	msg := message.ClientRequest{Directory: directory, FileSize: uint64(size), Type: 1}
 	wrapper := &message.Wrapper{
 		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
 	}
@@ -167,11 +234,14 @@ func main() {
 	//
 	//msgHandler.Send(wrapper)
 
-	select {
-	case res := <-c:
-		fmt.Println(res)
-	case <-time.After(30 * time.Second):
-		fmt.Println("timeout")
+	for {
+		select {
+		case res := <-c:
+			fmt.Println(res)
+			os.Exit(0)
+		case <-time.After(30 * time.Second):
+			fmt.Println("timeout")
+		}
 	}
 
 }
