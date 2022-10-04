@@ -79,7 +79,7 @@ func TestNodeAddChunk(t *testing.T) {
 
 	n.AddChunks(chunkIdToLocation)
 
-	actual, _ := n.GetChunk()
+	actual, _ := n.GetChunks()
 	fmt.Println(actual)
 
 	if !reflect.DeepEqual(actual[1], storageId) {
@@ -89,7 +89,7 @@ func TestNodeAddChunk(t *testing.T) {
 
 func TestPutFileSuccess(t *testing.T) {
 	fileSystemTree := data_structure.NewFileSystemTree()
-	_, err := fileSystemTree.PutFile("/hello/world.txt", nil)
+	err := fileSystemTree.PutFile("/hello/world.txt", nil)
 
 	if err != nil {
 		fmt.Println(err)
@@ -106,13 +106,13 @@ func TestPutFileSuccess(t *testing.T) {
 
 func TestPutFileFail(t *testing.T) {
 	fileSystemTree := data_structure.NewFileSystemTree()
-	_, err := fileSystemTree.PutFile("/hello/world.txt", nil)
+	err := fileSystemTree.PutFile("/hello/world.txt", nil)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(3)
 	}
 
-	_, err = fileSystemTree.PutFile("/hello/world.txt", nil)
+	err = fileSystemTree.PutFile("/hello/world.txt", nil)
 	fmt.Println(err)
 
 	if err == nil {
@@ -122,7 +122,7 @@ func TestPutFileFail(t *testing.T) {
 
 func TestDeleteFileSuccess(t *testing.T) {
 	fileSystemTree := data_structure.NewFileSystemTree()
-	_, err := fileSystemTree.PutFile("/hello/world.txt", nil)
+	err := fileSystemTree.PutFile("/hello/world.txt", nil)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(3)
@@ -136,9 +136,28 @@ func TestDeleteFileSuccess(t *testing.T) {
 	}
 }
 
+func TestGetFileSuccess(t *testing.T) {
+	fileSystemTree := data_structure.NewFileSystemTree()
+	snIdList := make(map[int][]int32)
+	snIdList[0] = []int32{1, 2, 3}
+
+	err := fileSystemTree.PutFile("/hello/world.txt", snIdList)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(3)
+	}
+
+	actual, err := fileSystemTree.GetFile("/hello/world.txt")
+	expected := []int32{1, 2, 3}
+
+	if !reflect.DeepEqual(actual[0], expected) {
+		t.Errorf("actual %d, expected %d", actual, expected)
+	}
+}
+
 func TestLsFileFail(t *testing.T) {
 	fileSystemTree := data_structure.NewFileSystemTree()
-	_, err := fileSystemTree.PutFile("/hello/world.txt", nil)
+	err := fileSystemTree.PutFile("/hello/world.txt", nil)
 
 	if err != nil {
 		fmt.Println(err)

@@ -19,24 +19,26 @@ func NewFileSystemTree() *FileSystemTree {
 	return &tree
 }
 
-func (fst *FileSystemTree) GetFile(filePath string) (bool, error) {
+func (fst *FileSystemTree) GetFile(filePath string) (map[int][]int32, error) {
 	filePathArr := strings.FieldsFunc(filePath, f)
 	currFile := fst.root
 	totalFiles := len(filePathArr)
+	var chunks map[int][]int32
 
 	// Iterating file path
 	for i, file := range filePathArr {
 		if !currFile.IsChildExist(file) {
-			return false, errors.New("No such file or directories: " + file)
+			return nil, errors.New("No such file or directories: " + file)
 		} else {
 			// Get if we reach the destination file
 			if i >= totalFiles-1 {
-				currFile.DeleteChild(file)
+				currFile = currFile.GetChild(file)
+				chunks, _ = currFile.GetChunks()
 			} else {
 				temp := currFile.GetChild(file)
 
 				if temp.GetFileType() == "file" {
-					return false, errors.New("Not a directory: " + file)
+					return nil, errors.New("Not a directory: " + file)
 				} else {
 					currFile = temp
 				}
@@ -44,10 +46,10 @@ func (fst *FileSystemTree) GetFile(filePath string) (bool, error) {
 		}
 	}
 
-	return true, nil
+	return chunks, nil
 }
 
-func (fst *FileSystemTree) PutFile(filePath string, chunkIdToLocation map[int][]int32) (*node, error) {
+func (fst *FileSystemTree) PutFile(filePath string, chunkIdToLocation map[int][]int32) error {
 	filePathArr := strings.FieldsFunc(filePath, f)
 	currFile := fst.root
 	totalFiles := len(filePathArr)
@@ -73,12 +75,12 @@ func (fst *FileSystemTree) PutFile(filePath string, chunkIdToLocation map[int][]
 			if i < (totalFiles - 1) {
 				currFile = currFile.GetChild(file)
 			} else {
-				return nil, errors.New("File already exist: " + currFile.GetChild(file).GetName())
+				return errors.New("File already exist: " + currFile.GetChild(file).GetName())
 			}
 		}
 	}
 
-	return currFile, nil
+	return nil
 }
 
 func (fst *FileSystemTree) DeleteFile(filePath string) (bool, error) {
@@ -161,7 +163,7 @@ func (n *node) GetFileType() string {
 	return n.fileType
 }
 
-func (n *node) GetChunk() (map[int][]int32, error) {
+func (n *node) GetChunks() (map[int][]int32, error) {
 	if n.fileType == "directory" {
 		return nil, errors.New("Not a file: " + n.GetName())
 	}

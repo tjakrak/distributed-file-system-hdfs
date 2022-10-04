@@ -1,6 +1,7 @@
 package main
 
 /* Source: https://socketloop.com/tutorials/golang-how-to-split-or-chunking-a-file-to-smaller-pieces */
+/* Source: https://www.socketloop.com/tutorials/golang-recombine-chunked-files-example */
 
 import (
 	"encoding/base64"
@@ -14,7 +15,48 @@ import (
 	"time"
 )
 
-var directory = ""
+var hdfsFileDir = ""
+var localFileDir = ""
+var msgHandlerMap = make(map[string]*message.MessageHandler)
+
+func chunkToFile(chunks [][]byte) {
+	// Create a file to store the file
+	newFile := localFileDir
+	_, err := os.Create(newFile)
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	// Open the newly created file
+	file, err := os.OpenFile(newFile, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	// To keep track the pointer position when we are appending
+	var writePosition int = 0
+	for i, chunk := range chunks {
+		chunkSize := len(chunk)
+		writePosition = writePosition + chunkSize
+
+		_, err := file.Write(chunk)
+
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		file.Sync() //flush to disk
+		log.Println("Recombining part [", i, "] into : ", newFile)
+
+	}
+
+	file.Close()
+}
 
 func fileToChunk(filename string, chunkSize uint64) [][]byte {
 	var chunkList [][]byte
@@ -60,6 +102,31 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 		case *message.Wrapper_ControllerResMessage:
 
 			if msg.ControllerResMessage.Type == 0 { // GET
+				chunkIdToSNInfo := msg.ControllerResMessage.GetStorageInfoPerChunk()
+
+				// Iterating through each chunkId and storage location to store the chunk
+				for chunkId, snList := range chunkIdToSNInfo {
+					for _, v := range snList.GetStorageInfo() {
+						host := v.Host
+						port := v.Port
+						hostAndPort := host + ":" + strconv.FormatInt(int64(port), 10)
+
+						if mh, ok := msgHandlerMap[hostAndPort]; ok {
+							snMsgHandler := mh
+						} else {
+							conn, err := net.Dial("tcp", hostAndPort)
+							if err != nil {
+								log.Fatalln(err.Error())
+								return
+							}
+
+							snMsgHandler := message.NewMessageHandler(conn)
+							msgHandlerMap[hostAndPort] = snMsgHandler
+						}
+
+						break
+					}
+				}
 
 			} else if msg.ControllerResMessage.Type == 1 { // PUT
 
@@ -74,18 +141,18 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 				chunkIdToSNInfo := msg.ControllerResMessage.GetStorageInfoPerChunk()
 				chunkSize := msg.ControllerResMessage.GetChunkSize()
 
-				chunkList := fileToChunk(directory, chunkSize)
+				chunkList := fileToChunk(localFileDir, chunkSize)
 
 				// Iterating through each chunkId and storage location to store the chunk
-				for key, val := range chunkIdToSNInfo {
-					fmt.Println(val)
-					for _, v := range val.GetStorageInfo() {
+				for chunkId, snList := range chunkIdToSNInfo {
+					fmt.Println(snList)
+					for _, v := range snList.GetStorageInfo() {
 						host := v.Host
 						port := v.Port
 						hostAndPort := host + ":" + strconv.FormatInt(int64(port), 10)
-						encodedChunkName := base64.StdEncoding.EncodeToString([]byte(directory + "-" + strconv.FormatInt(int64(key), 10)))
+						encodedChunkName := base64.StdEncoding.EncodeToString([]byte(hdfsFileDir + "-" + strconv.FormatInt(int64(chunkId), 10)))
 
-						sendRequestStorage(hostAndPort, key, encodedChunkName, chunkList[0], val)
+						sendPutRequestSN(hostAndPort, chunkId, encodedChunkName, chunkList[0], snList)
 						break
 					}
 				}
@@ -142,7 +209,7 @@ func sendRequestController(msgHandler *message.MessageHandler, command string, p
 	msgHandler.Send(wrapper)
 }
 
-func sendRequestStorage(hostAndPort string, chunkId int32, chunkName string, chunk []byte, storageInfoList *message.StorageInfoList) {
+func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk []byte, storageInfoList *message.StorageInfoList) {
 	conn, err := net.Dial("tcp", hostAndPort)
 	if err != nil {
 		log.Fatalln(err.Error())
@@ -184,6 +251,12 @@ func sendRequestStorage(hostAndPort string, chunkId int32, chunkName string, chu
 	}
 }
 
+func sendGetRequestSN(msgHandler *message.MessageHandler) {
+	c := make(chan bool)
+	go handleIncomingConnection(msgHandler, c)
+
+}
+
 func main() {
 
 	var listOfChunks [][]byte = fileToChunk("../../L2-tjakrak/log.txt", 128*(1<<20))
@@ -207,9 +280,10 @@ func main() {
 	go handleIncomingConnection(msgHandler, c)
 
 	// Send a request message to the server
-	directory = "../../L2-tjakrak/log.txt"
-	// directory = "/Users/ryantjakrakartadinata/go/src/L2-tjakrak/large-log.txt"
-	file, err := os.Open(directory) // For read access.
+	localFileDir = "../../L2-tjakrak/log.txt"
+	hdfsFileDir = "../../L2-tjakrak/log.txt"
+	// hdfsFileDir = "/Users/ryantjakrakartadinata/go/src/L2-tjakrak/large-log.txt"
+	file, err := os.Open(localFileDir) // For read access.
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -220,7 +294,7 @@ func main() {
 	fmt.Println(size)
 
 	// send request to controller
-	msg := message.ClientRequest{Directory: directory, FileSize: uint64(size), Type: 1}
+	msg := message.ClientRequest{Directory: hdfsFileDir, FileSize: uint64(size), Type: 1}
 	wrapper := &message.Wrapper{
 		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
 	}
@@ -243,5 +317,9 @@ func main() {
 			fmt.Println("timeout")
 		}
 	}
+
+}
+
+func sendPutRequest() {
 
 }

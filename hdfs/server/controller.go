@@ -27,12 +27,12 @@ const rep = 3
 
 var fileSystemTree = data_structure.NewFileSystemTree()
 var snIdToMemberInfo = make(map[int]*storageNode)
-var snIdToMemberInfoLock = sync.RWMutex{}
 var snLocation = make(map[string]bool)
-
-//var snLatestId = 0
-
 var snLatestId = 0
+
+var fileSystemTreeLock = sync.RWMutex{}
+var snIdToMemberInfoLock = sync.RWMutex{}
+var snRegisterNewLock = sync.RWMutex{}
 
 var f = func(c rune) bool {
 	return c == ':'
@@ -49,6 +49,34 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 			log.Println(directory)
 
 			if msg.ClientReqMessage.Type == 0 { // GET
+				chunkIdToSNIdList, err := fileSystemTree.GetFile(directory)
+				chunkIdToSNInfo := make(map[int32]*message.StorageInfoList)
+
+				if err != nil {
+
+				}
+
+				for chunkId, snIdList := range chunkIdToSNIdList {
+					storageInfoList := new(message.StorageInfoList)
+
+					for _, snId := range snIdList {
+						host := snIdToMemberInfo[int(snId)].hostname
+						port := snIdToMemberInfo[int(snId)].port
+						isAlive := snIdToMemberInfo[int(snId)].isAlive
+
+						storageInfo := message.StorageInfo{Host: host, Port: port, IsAlive: isAlive}
+						storageInfoList.StorageInfo = append(storageInfoList.StorageInfo, &storageInfo)
+					}
+
+					chunkIdToSNInfo[int32(chunkId)] = storageInfoList
+				}
+
+				resMsg := message.ControllerResponse{
+					StorageInfoPerChunk: chunkIdToSNInfo,
+					Type:                0,
+				}
+
+				sendControllerResponseMsg(msgHandler, &resMsg)
 
 			} else if msg.ClientReqMessage.Type == 1 { // PUT
 				fileSize := msg.ClientReqMessage.GetFileSize()
@@ -97,7 +125,9 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 					Type:                1,
 				}
 
-				_, err := fileSystemTree.PutFile(directory, chunkIdToSNIdList)
+				fileSystemTreeLock.Lock()
+				err := fileSystemTree.PutFile(directory, chunkIdToSNIdList)
+				fileSystemTreeLock.Unlock()
 
 				if err != nil {
 					log.Println(err)
@@ -107,9 +137,16 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 				sendControllerResponseMsg(msgHandler, &resMsg)
 
 			} else if msg.ClientReqMessage.Type == 2 { // DELETE
+
+				fileSystemTreeLock.Lock()
 				fileSystemTree.DeleteFile(directory)
+				fileSystemTreeLock.Unlock()
+
 			} else if msg.ClientReqMessage.Type == 3 { // LS
+
+				fileSystemTreeLock.RLock()
 				fileList, _ := fileSystemTree.ShowFiles(directory)
+				fileSystemTreeLock.RUnlock()
 
 				resMsg := message.ControllerResponse{FileList: fileList, Type: 3}
 				sendControllerResponseMsg(msgHandler, &resMsg)
@@ -138,6 +175,8 @@ func registerNewSN(msg *message.Wrapper_HbMessage) (int, bool) {
 	hostAndPort := msg.HbMessage.GetHostAndPort()
 	spaceAvail := msg.HbMessage.GetSpaceAvailable()
 
+	snRegisterNewLock.Lock()
+
 	if snLocation[hostAndPort] == true || spaceAvail == 0 {
 		return -1, false
 	}
@@ -153,6 +192,8 @@ func registerNewSN(msg *message.Wrapper_HbMessage) (int, bool) {
 	snLocation[hostAndPort] = true
 
 	snLatestId += 1
+
+	snRegisterNewLock.Unlock()
 
 	return assignedId, true
 }
@@ -172,6 +213,7 @@ func heartBeatChecker(duration time.Duration) {
 
 func heartBeatHandler(id int) {
 	log.Printf("%d Receive heartbeat", id)
+
 	currTime := time.Now()
 	snIdToMemberInfoLock.Lock()
 	snIdToMemberInfo[id].lastHB = currTime
@@ -179,12 +221,16 @@ func heartBeatHandler(id int) {
 }
 
 func getRandNumber() []int {
+	snRegisterNewLock.RLock()
+
 	snRandIdList := make([]int, snLatestId)
 	rand.Seed(time.Now().UnixNano())
 	p := rand.Perm(snLatestId)
 	for i, r := range p[:snLatestId] {
 		snRandIdList[i] = r + 1
 	}
+
+	snRegisterNewLock.RUnlock()
 
 	return snRandIdList
 }

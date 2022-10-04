@@ -156,7 +156,6 @@ func replicateChunk(hashedDir string, chunk []byte, chunkIdToSNInfo map[int32]*m
 	}
 
 	wg.Wait()
-	fmt.Println("Done")
 	return true
 }
 
