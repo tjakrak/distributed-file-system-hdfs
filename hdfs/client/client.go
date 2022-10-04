@@ -12,12 +12,20 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 )
+
+type chunkStruct struct {
+	chunkByte []byte
+	c         chan bool
+}
 
 var hdfsFileDir = ""
 var localFileDir = ""
 var msgHandlerMap = make(map[string]*message.MessageHandler)
+var idToChunk []chunkStruct
+var chunkContainerLock = sync.RWMutex{}
 
 func chunkToFile(chunks [][]byte) {
 	// Create a file to store the file
@@ -95,6 +103,7 @@ func fileToChunk(filename string, chunkSize uint64) [][]byte {
 func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 
 	defer msgHandler.Close()
+
 	for {
 		wrapper, _ := msgHandler.Receive()
 
@@ -103,29 +112,12 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 
 			if msg.ControllerResMessage.Type == 0 { // GET
 				chunkIdToSNInfo := msg.ControllerResMessage.GetStorageInfoPerChunk()
+				chunkSize := msg.ControllerResMessage.GetChunkSize()
+				idToChunk = make([]chunkStruct, chunkSize)
 
 				// Iterating through each chunkId and storage location to store the chunk
 				for chunkId, snList := range chunkIdToSNInfo {
-					for _, v := range snList.GetStorageInfo() {
-						host := v.Host
-						port := v.Port
-						hostAndPort := host + ":" + strconv.FormatInt(int64(port), 10)
-
-						if mh, ok := msgHandlerMap[hostAndPort]; ok {
-							snMsgHandler := mh
-						} else {
-							conn, err := net.Dial("tcp", hostAndPort)
-							if err != nil {
-								log.Fatalln(err.Error())
-								return
-							}
-
-							snMsgHandler := message.NewMessageHandler(conn)
-							msgHandlerMap[hostAndPort] = snMsgHandler
-						}
-
-						break
-					}
+					sendGetRequestSN(snList, chunkId)
 				}
 
 			} else if msg.ControllerResMessage.Type == 1 { // PUT
@@ -146,13 +138,13 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 				// Iterating through each chunkId and storage location to store the chunk
 				for chunkId, snList := range chunkIdToSNInfo {
 					fmt.Println(snList)
-					for _, v := range snList.GetStorageInfo() {
-						host := v.Host
-						port := v.Port
+					for _, sn := range snList.GetStorageInfo() {
+						host := sn.Host
+						port := sn.Port
 						hostAndPort := host + ":" + strconv.FormatInt(int64(port), 10)
 						encodedChunkName := base64.StdEncoding.EncodeToString([]byte(hdfsFileDir + "-" + strconv.FormatInt(int64(chunkId), 10)))
 
-						sendPutRequestSN(hostAndPort, chunkId, encodedChunkName, chunkList[0], snList)
+						sendPutRequestSN(hostAndPort, chunkId, encodedChunkName, chunkList[chunkId], snList)
 						break
 					}
 				}
@@ -172,12 +164,16 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 
 		case *message.Wrapper_StorageResMessage:
 			if msg.StorageResMessage.Type == 0 { // GET
+				chunkId := msg.StorageResMessage.GetChunkId()
+				chunkBytes := msg.StorageResMessage.GetChunkBytes()
+
+				idToChunk[chunkId].c <- true
+				idToChunk[chunkId].chunkByte = chunkBytes
 
 			} else if msg.StorageResMessage.Type == 1 { // PUT
 				fmt.Println("success")
+				c <- true
 			}
-
-			c <- true
 
 		case nil:
 			log.Println("Received an empty message, terminating server")
@@ -195,7 +191,18 @@ func sendRequestController(msgHandler *message.MessageHandler, command string, p
 	case "-get":
 
 	case "-put":
+		file, err := os.Open(localFileDir) // For read access.
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer file.Close()
 
+		fStat, err := file.Stat()
+		size := fStat.Size()
+		fmt.Println(size)
+
+		// send request to controller
+		msg = message.ClientRequest{Directory: hdfsFileDir, FileSize: uint64(size), Type: 1}
 	case "-rm":
 		msg = message.ClientRequest{Directory: path, Type: 2}
 	case "-ls":
@@ -210,15 +217,22 @@ func sendRequestController(msgHandler *message.MessageHandler, command string, p
 }
 
 func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk []byte, storageInfoList *message.StorageInfoList) {
-	conn, err := net.Dial("tcp", hostAndPort)
-	if err != nil {
-		log.Fatalln(err.Error())
-		return
+	var msgHandler *message.MessageHandler
+
+	if mh, ok := msgHandlerMap[hostAndPort]; ok {
+		msgHandler = mh
+	} else {
+		conn, err := net.Dial("tcp", hostAndPort)
+		if err != nil {
+			log.Fatalln(err.Error())
+			return
+		}
+
+		msgHandler = message.NewMessageHandler(conn)
+		msgHandlerMap[hostAndPort] = msgHandler
 	}
 
-	msgHandler := message.NewMessageHandler(conn)
 	c := make(chan bool)
-
 	// Listening response from storage
 	go handleIncomingConnection(msgHandler, c)
 
@@ -226,13 +240,11 @@ func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk
 	chunkIdToSNInfo := make(map[int32]*message.StorageInfoList)
 	chunkIdToSNInfo[chunkId] = storageInfoList
 
-	fmt.Println("LENGTH OF")
-	fmt.Println(len(storageInfoList.GetStorageInfo()))
-
 	msg := message.ClientRequest{
 		HashedDirectory:     chunkName,
+		ChunkId:             chunkId,
 		ChunkSize:           uint64(len(chunk)),
-		Chunk:               chunk,
+		ChunkBytes:          chunk,
 		Type:                1,
 		StorageInfoPerChunk: chunkIdToSNInfo,
 	}
@@ -246,15 +258,57 @@ func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk
 	select {
 	case res := <-c:
 		fmt.Printf("sub channel %t\n", res)
-	case <-time.After(30 * time.Second):
+	case <-time.After(60 * time.Second):
 		fmt.Println("sub timeout")
 	}
 }
 
-func sendGetRequestSN(msgHandler *message.MessageHandler) {
-	c := make(chan bool)
-	go handleIncomingConnection(msgHandler, c)
+func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32) {
+	var msgHandler *message.MessageHandler
 
+	for _, sn := range snList.GetStorageInfo() {
+		host := sn.Host
+		port := sn.Port
+		hostAndPort := host + ":" + strconv.FormatInt(int64(port), 10)
+		encodedChunkName := base64.StdEncoding.EncodeToString([]byte(hdfsFileDir + "-" + strconv.FormatInt(int64(chunkId), 10)))
+
+		if mh, ok := msgHandlerMap[hostAndPort]; ok {
+			msgHandler = mh
+		} else {
+			conn, err := net.Dial("tcp", hostAndPort)
+			if err != nil {
+				log.Fatalln(err.Error())
+				return
+			}
+
+			msgHandler = message.NewMessageHandler(conn)
+			msgHandlerMap[hostAndPort] = msgHandler
+			go handleIncomingConnection(msgHandler, nil)
+		}
+
+		c := make(chan bool)
+
+		idToChunk[chunkId].c = c
+
+		msg := message.ClientRequest{
+			HashedDirectory: encodedChunkName,
+			ChunkId:         chunkId,
+			Type:            0,
+		}
+
+		wrapper := &message.Wrapper{
+			Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
+		}
+
+		msgHandler.Send(wrapper)
+
+		select {
+		case res := <-c:
+			fmt.Printf("get %t\n", res)
+		case <-time.After(60 * time.Second):
+			fmt.Printf("get timeout for chunk id: %d\n", chunkId)
+		}
+	}
 }
 
 func main() {
@@ -280,8 +334,8 @@ func main() {
 	go handleIncomingConnection(msgHandler, c)
 
 	// Send a request message to the server
-	localFileDir = "../../L2-tjakrak/log.txt"
-	hdfsFileDir = "../../L2-tjakrak/log.txt"
+	localFileDir = "../../L2-tjakrak/log2.txt"
+	hdfsFileDir = "../../L2-tjakrak/log2.txt"
 	// hdfsFileDir = "/Users/ryantjakrakartadinata/go/src/L2-tjakrak/large-log.txt"
 	file, err := os.Open(localFileDir) // For read access.
 	if err != nil {
@@ -313,7 +367,7 @@ func main() {
 		case res := <-c:
 			fmt.Println(res)
 			os.Exit(0)
-		case <-time.After(30 * time.Second):
+		case <-time.After(60 * time.Second):
 			fmt.Println("timeout")
 		}
 	}

@@ -53,7 +53,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 				chunkIdToSNInfo := make(map[int32]*message.StorageInfoList)
 
 				if err != nil {
-
+					// file does not exist
 				}
 
 				for chunkId, snIdList := range chunkIdToSNIdList {
@@ -73,6 +73,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
 				resMsg := message.ControllerResponse{
 					StorageInfoPerChunk: chunkIdToSNInfo,
+					ChunkSize:           uint64(len(chunkIdToSNIdList)),
 					Type:                0,
 				}
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"golang.org/x/sys/unix"
 	"hdfs/message"
@@ -17,6 +18,7 @@ var thisDir = ""
 var thisStorage = 0
 var thisRetrieval = 0
 var thisHostAndPort = "localhost:9998"
+var msgHandlerMap = make(map[string]*message.MessageHandler)
 
 func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 
@@ -27,16 +29,22 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 		switch msg := wrapper.Msg.(type) {
 		case *message.Wrapper_ClientReqMessage:
 			if msg.ClientReqMessage.Type == 0 { // GET
+				hashedDir := msg.ClientReqMessage.GetHashedDirectory()
+				chunkId := msg.ClientReqMessage.GetChunkId()
+				chunkBytes := getByteFromFile(hashedDir)
+				sendChunkBytes(msgHandler, chunkId, chunkBytes)
+				// send response using msgHandler
+
 			} else if msg.ClientReqMessage.Type == 1 { // PUT
 				hashedDir := msg.ClientReqMessage.GetHashedDirectory()
-				chunk := msg.ClientReqMessage.GetChunk()
+				chunkBytes := msg.ClientReqMessage.GetChunkBytes()
 				chunkIdToSNInfo := msg.ClientReqMessage.GetStorageInfoPerChunk()
 
-				isStored := storeChunk(hashedDir, chunk)
-				isReplicated := replicateChunk(hashedDir, chunk, chunkIdToSNInfo)
+				isStored := storeChunk(hashedDir, chunkBytes)
+				isReplicated := replicateChunk(hashedDir, chunkBytes, chunkIdToSNInfo)
 
 				if isStored && isReplicated {
-					sendAck(msgHandler)
+					sendAck(msgHandler, 1)
 				}
 				//storageInfoListPerChunk := msg.ClientReqMessage.GetStorageInfoPerChunk()
 
@@ -45,13 +53,13 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 
 		case *message.Wrapper_StorageReqMessage:
 			hashedDir := msg.StorageReqMessage.GetHashedDirectory()
-			chunk := msg.StorageReqMessage.GetChunk()
+			chunkBytes := msg.StorageReqMessage.GetChunkBytes()
 
 			fmt.Println(hashedDir)
-			isStored := storeChunk(hashedDir, chunk)
+			isStored := storeChunk(hashedDir, chunkBytes)
 
 			if isStored {
-				sendAck(msgHandler)
+				sendAck(msgHandler, 1)
 			}
 
 		case *message.Wrapper_StorageResMessage:
@@ -114,8 +122,8 @@ func startHeartBeat(conn net.Conn) {
 	}
 }
 
-func sendAck(msgHandler *message.MessageHandler) {
-	msg := message.StorageResponse{Ack: true, Type: 1}
+func sendAck(msgHandler *message.MessageHandler, opType int) {
+	msg := message.StorageResponse{Ack: true, Type: message.OperationType(opType)}
 	wrapper := &message.Wrapper{
 		Msg: &message.Wrapper_StorageResMessage{StorageResMessage: &msg},
 	}
@@ -161,13 +169,21 @@ func replicateChunk(hashedDir string, chunk []byte, chunkIdToSNInfo map[int32]*m
 
 func sendRequestStorage(hostAndPort string, chunkId int32, chunkName string, chunk []byte, wg *sync.WaitGroup) {
 
-	conn, err := net.Dial("tcp", hostAndPort)
-	if err != nil {
-		log.Fatalln(err.Error())
-		return
+	var msgHandler *message.MessageHandler
+
+	if mh, ok := msgHandlerMap[hostAndPort]; ok {
+		msgHandler = mh
+	} else {
+		conn, err := net.Dial("tcp", hostAndPort)
+		if err != nil {
+			log.Fatalln(err.Error())
+			return
+		}
+
+		msgHandler = message.NewMessageHandler(conn)
+		msgHandlerMap[hostAndPort] = msgHandler
 	}
 
-	msgHandler := message.NewMessageHandler(conn)
 	c := make(chan bool)
 
 	// Listening response from storage
@@ -176,7 +192,7 @@ func sendRequestStorage(hostAndPort string, chunkId int32, chunkName string, chu
 	msg := message.StorageRequest{
 		HashedDirectory: chunkName,
 		ChunkSize:       uint64(len(chunk)),
-		Chunk:           chunk,
+		ChunkBytes:      chunk,
 	}
 
 	wrapper := &message.Wrapper{
@@ -188,11 +204,55 @@ func sendRequestStorage(hostAndPort string, chunkId int32, chunkName string, chu
 	select {
 	case res := <-c:
 		fmt.Printf("replicate successful %t\n", res)
-	case <-time.After(30 * time.Second):
+	case <-time.After(60 * time.Second):
 		fmt.Println("timeout")
 	}
 
 	wg.Done()
+}
+
+func getByteFromFile(filename string) []byte {
+
+	chunk, err := os.Open(filename)
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	defer chunk.Close()
+
+	chunkInfo, err := chunk.Stat()
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	// calculate the bytes size of each chunk
+	// we are not going to rely on previous data and constant
+
+	var chunkSize int64 = chunkInfo.Size()
+	chunkBufferBytes := make([]byte, chunkSize)
+
+	// read into chunkBufferBytes
+	reader := bufio.NewReader(chunk)
+	_, err = reader.Read(chunkBufferBytes)
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	return chunkBufferBytes
+}
+
+func sendChunkBytes(msgHandler *message.MessageHandler, chunkId int32, chunkBytes []byte) {
+	msg := message.StorageResponse{Ack: true, Type: 0, ChunkId: chunkId, ChunkBytes: chunkBytes}
+	wrapper := &message.Wrapper{
+		Msg: &message.Wrapper_StorageResMessage{StorageResMessage: &msg},
+	}
+	msgHandler.Send(wrapper)
 }
 
 func main() {

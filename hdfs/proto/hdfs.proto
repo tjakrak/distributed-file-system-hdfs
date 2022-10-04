@@ -15,10 +15,11 @@ message ClientRequest {
   string directory = 1;
   string hashed_directory = 2;
   uint64 file_size = 3;
-  uint64 chunk_size = 4;
-  bytes chunk = 5;
-  map<int32, StorageInfoList> storage_info_per_chunk = 6; // chunk_id, list of storage node
-  operationType type = 7;
+  int32 chunk_id = 4;
+  uint64 chunk_size = 5;
+  bytes chunk_bytes = 6;
+  map<int32, StorageInfoList> storage_info_per_chunk = 7; // chunk_id, list of storage node
+  operationType type = 8;
 }
 
 message ControllerResponse {
@@ -32,15 +33,16 @@ message ControllerResponse {
 message StorageRequest {
   string hashed_directory = 1;
   uint64 chunk_size = 2;
-  bytes chunk = 3;
+  bytes chunk_bytes = 3;
 }
 
 message StorageResponse {
   bool ack = 1;
   string hashed_directory = 2;
-  uint64 chunk_size = 3;
-  bytes chunk = 4;
-  operationType type = 5;
+  int32 chunk_id = 3;
+  uint64 chunk_size = 4;
+  bytes chunk_bytes = 5;
+  operationType type = 6;
 }
 
 message StorageInfo {
