@@ -32,8 +32,9 @@ message ControllerResponse {
 
 message StorageRequest {
   string hashed_directory = 1;
-  uint64 chunk_size = 2;
-  bytes chunk_bytes = 3;
+  string host_port = 2;
+  uint64 chunk_size = 3;
+  bytes chunk_bytes = 4;
 }
 
 message StorageResponse {

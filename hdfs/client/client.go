@@ -27,7 +27,7 @@ var msgHandlerMap = make(map[string]*message.MessageHandler)
 var idToChunk []chunkStruct
 var chunkContainerLock = sync.RWMutex{}
 
-func chunkToFile(chunks [][]byte) {
+func chunkToFile(chunks []chunkStruct) {
 	// Create a file to store the file
 	newFile := localFileDir
 	_, err := os.Create(newFile)
@@ -48,10 +48,10 @@ func chunkToFile(chunks [][]byte) {
 	// To keep track the pointer position when we are appending
 	var writePosition int = 0
 	for i, chunk := range chunks {
-		chunkSize := len(chunk)
+		chunkSize := len(chunk.chunkByte)
 		writePosition = writePosition + chunkSize
 
-		_, err := file.Write(chunk)
+		_, err := file.Write(chunk.chunkByte)
 
 		if err != nil {
 			fmt.Println(err)
@@ -119,6 +119,8 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 				for chunkId, snList := range chunkIdToSNInfo {
 					sendGetRequestSN(snList, chunkId)
 				}
+
+				chunkToFile(idToChunk)
 
 			} else if msg.ControllerResMessage.Type == 1 { // PUT
 
@@ -255,11 +257,13 @@ func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk
 
 	msgHandler.Send(wrapper)
 
+	fmt.Println("WAITING")
+
 	select {
 	case res := <-c:
 		fmt.Printf("sub channel %t\n", res)
-	case <-time.After(60 * time.Second):
-		fmt.Println("sub timeout")
+		//case <-time.After(60 * time.Second):
+		//	fmt.Println("sub timeout")
 	}
 }
 
@@ -347,7 +351,7 @@ func main() {
 	size := fStat.Size()
 	fmt.Println(size)
 
-	// send request to controller
+	// send PUT request to controller
 	msg := message.ClientRequest{Directory: hdfsFileDir, FileSize: uint64(size), Type: 1}
 	wrapper := &message.Wrapper{
 		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
@@ -355,8 +359,18 @@ func main() {
 
 	msgHandler.Send(wrapper)
 
-	//msg = message.ClientRequest{Directory: "test/hello/", Type: 3}
-	//wrapper = &message.Wrapper{
+	//send LS request to controller
+	//msg := message.ClientRequest{Directory: "../../L2-tjakrak/", Type: 3}
+	//wrapper := &message.Wrapper{
+	//	Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
+	//}
+	//
+	//msgHandler.Send(wrapper)
+
+	//send GET request to controller
+	//localFileDir = "s3/log.txt"
+	//msg := message.ClientRequest{Directory: hdfsFileDir, Type: 0}
+	//wrapper := &message.Wrapper{
 	//	Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
 	//}
 	//

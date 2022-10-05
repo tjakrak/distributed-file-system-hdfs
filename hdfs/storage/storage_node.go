@@ -19,7 +19,9 @@ var thisStorage = 0
 var thisRetrieval = 0
 var thisHostAndPort = "localhost:9998"
 var msgHandlerMap = make(map[string]*message.MessageHandler)
+var msgHandlerMapLock = sync.RWMutex{}
 var hashedDirToChan = make(map[string]chan bool)
+var hashedDirToChanLock = sync.RWMutex{}
 
 func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
@@ -67,8 +69,10 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 			hashedDir := msg.StorageResMessage.GetHashedDirectory() // hashed dir + host and port
 
 			if isAck {
+				hashedDirToChanLock.Lock()
 				hashedDirToChan[hashedDir] <- true
 				delete(hashedDirToChan, hashedDir)
+				hashedDirToChanLock.Unlock()
 			}
 
 		case *message.Wrapper_HbMessage:
@@ -125,7 +129,7 @@ func startHeartBeat(conn net.Conn) {
 }
 
 func sendAck(msgHandler *message.MessageHandler, hashedDir string, opType int) {
-	msg := message.StorageResponse{Ack: true, HashedDirectory: hashedDir, Type: message.OperationType(opType)}
+	msg := message.StorageResponse{Ack: true, HashedDirectory: hashedDir + thisHostAndPort, Type: message.OperationType(opType)}
 	wrapper := &message.Wrapper{
 		Msg: &message.Wrapper_StorageResMessage{StorageResMessage: &msg},
 	}
@@ -171,10 +175,11 @@ func replicateChunk(hashedDir string, chunk []byte, chunkIdToSNInfo map[int32]*m
 	return true
 }
 
-func sendRequestStorage(hostAndPort string, chunkName string, chunk []byte, wg *sync.WaitGroup) {
+func sendRequestStorage(hostAndPort string, hashedDir string, chunk []byte, wg *sync.WaitGroup) {
 
 	var msgHandler *message.MessageHandler
 
+	msgHandlerMapLock.Lock()
 	if mh, ok := msgHandlerMap[hostAndPort]; ok {
 		msgHandler = mh
 	} else {
@@ -187,17 +192,20 @@ func sendRequestStorage(hostAndPort string, chunkName string, chunk []byte, wg *
 		msgHandler = message.NewMessageHandler(conn)
 		msgHandlerMap[hostAndPort] = msgHandler
 	}
+	msgHandlerMapLock.Unlock()
 
 	c := make(chan bool)
 
-	hashedDir := chunkName + hostAndPort
-	hashedDirToChan[hashedDir] = c
+	hashedDirToChanLock.Lock()
+	hashedDirToChan[hashedDir+hostAndPort] = c
+	hashedDirToChanLock.Unlock()
 
 	// Listening response from storage
 	go handleIncomingConnection(msgHandler)
 
 	msg := message.StorageRequest{
 		HashedDirectory: hashedDir,
+		HostPort:        hostAndPort,
 		ChunkSize:       uint64(len(chunk)),
 		ChunkBytes:      chunk,
 	}
@@ -220,7 +228,7 @@ func sendRequestStorage(hostAndPort string, chunkName string, chunk []byte, wg *
 
 func getByteFromFile(filename string) []byte {
 
-	chunk, err := os.Open(filename)
+	chunk, err := os.Open(thisDir + filename)
 
 	if err != nil {
 		fmt.Println(err)
