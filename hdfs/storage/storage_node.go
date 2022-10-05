@@ -14,13 +14,14 @@ import (
 )
 
 var thisId int32 = 0
-var thisDir = ""
+var thisDir = "s1/"
 var thisStorage = 0
 var thisRetrieval = 0
 var thisHostAndPort = "localhost:9998"
 var msgHandlerMap = make(map[string]*message.MessageHandler)
+var hashedDirToChan = make(map[string]chan bool)
 
-func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
+func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
 	defer msgHandler.Close()
 	for {
@@ -44,7 +45,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 				isReplicated := replicateChunk(hashedDir, chunkBytes, chunkIdToSNInfo)
 
 				if isStored && isReplicated {
-					sendAck(msgHandler, 1)
+					sendAck(msgHandler, "", 1)
 				}
 				//storageInfoListPerChunk := msg.ClientReqMessage.GetStorageInfoPerChunk()
 
@@ -55,18 +56,19 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 			hashedDir := msg.StorageReqMessage.GetHashedDirectory()
 			chunkBytes := msg.StorageReqMessage.GetChunkBytes()
 
-			fmt.Println(hashedDir)
 			isStored := storeChunk(hashedDir, chunkBytes)
 
 			if isStored {
-				sendAck(msgHandler, 1)
+				sendAck(msgHandler, hashedDir, 1)
 			}
 
 		case *message.Wrapper_StorageResMessage:
 			isAck := msg.StorageResMessage.GetAck()
+			hashedDir := msg.StorageResMessage.GetHashedDirectory() // hashed dir + host and port
 
 			if isAck {
-				c <- true
+				hashedDirToChan[hashedDir] <- true
+				delete(hashedDirToChan, hashedDir)
 			}
 
 		case *message.Wrapper_HbMessage:
@@ -90,7 +92,7 @@ func listenToIncomingConnection(listener net.Listener) {
 	for {
 		if conn, err := listener.Accept(); err == nil {
 			msgHandler := message.NewMessageHandler(conn)
-			go handleIncomingConnection(msgHandler, nil)
+			go handleIncomingConnection(msgHandler)
 		}
 	}
 }
@@ -99,7 +101,7 @@ func startHeartBeat(conn net.Conn) {
 	msgHandler := message.NewMessageHandler(conn)
 	defer msgHandler.Close()
 
-	go handleIncomingConnection(msgHandler, nil)
+	go handleIncomingConnection(msgHandler)
 
 	ticker := time.NewTicker(3 * time.Second)
 
@@ -122,8 +124,8 @@ func startHeartBeat(conn net.Conn) {
 	}
 }
 
-func sendAck(msgHandler *message.MessageHandler, opType int) {
-	msg := message.StorageResponse{Ack: true, Type: message.OperationType(opType)}
+func sendAck(msgHandler *message.MessageHandler, hashedDir string, opType int) {
+	msg := message.StorageResponse{Ack: true, HashedDirectory: hashedDir, Type: message.OperationType(opType)}
 	wrapper := &message.Wrapper{
 		Msg: &message.Wrapper_StorageResMessage{StorageResMessage: &msg},
 	}
@@ -131,8 +133,10 @@ func sendAck(msgHandler *message.MessageHandler, opType int) {
 }
 
 func storeChunk(fileName string, chunkByte []byte) bool {
+	fileDir := thisDir + fileName
+
 	// write to disk
-	f, err := os.Create(thisDir + fileName)
+	f, err := os.Create(fileDir)
 
 	if err != nil {
 		log.Println(err)
@@ -142,7 +146,7 @@ func storeChunk(fileName string, chunkByte []byte) bool {
 	defer f.Close()
 
 	// write/save buffer to disk
-	os.WriteFile(fileName, chunkByte, os.ModeAppend)
+	os.WriteFile(fileDir, chunkByte, os.ModeAppend)
 	return true
 }
 
@@ -150,15 +154,15 @@ func replicateChunk(hashedDir string, chunk []byte, chunkIdToSNInfo map[int32]*m
 	var wg sync.WaitGroup
 
 	// Iterating through each chunkId and storage location to store the chunk
-	for key, val := range chunkIdToSNInfo {
-		for i, v := range val.GetStorageInfo() {
+	for _, snInfo := range chunkIdToSNInfo {
+		for i, v := range snInfo.GetStorageInfo() {
 			if i > 0 {
 				host := v.Host
 				port := v.Port
 				hostAndPort := host + ":" + strconv.FormatInt(int64(port), 10)
 
 				wg.Add(1)
-				go sendRequestStorage(hostAndPort, key, hashedDir, chunk, &wg)
+				go sendRequestStorage(hostAndPort, hashedDir, chunk, &wg)
 			}
 		}
 	}
@@ -167,7 +171,7 @@ func replicateChunk(hashedDir string, chunk []byte, chunkIdToSNInfo map[int32]*m
 	return true
 }
 
-func sendRequestStorage(hostAndPort string, chunkId int32, chunkName string, chunk []byte, wg *sync.WaitGroup) {
+func sendRequestStorage(hostAndPort string, chunkName string, chunk []byte, wg *sync.WaitGroup) {
 
 	var msgHandler *message.MessageHandler
 
@@ -186,11 +190,14 @@ func sendRequestStorage(hostAndPort string, chunkId int32, chunkName string, chu
 
 	c := make(chan bool)
 
+	hashedDir := chunkName + hostAndPort
+	hashedDirToChan[hashedDir] = c
+
 	// Listening response from storage
-	go handleIncomingConnection(msgHandler, c)
+	go handleIncomingConnection(msgHandler)
 
 	msg := message.StorageRequest{
-		HashedDirectory: chunkName,
+		HashedDirectory: hashedDir,
 		ChunkSize:       uint64(len(chunk)),
 		ChunkBytes:      chunk,
 	}
