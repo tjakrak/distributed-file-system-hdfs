@@ -14,10 +14,12 @@ import (
 )
 
 var thisId int32 = 0
-var thisDir = "s1/"
+var thisDir = ""
 var thisStorage = 0
 var thisRetrieval = 0
-var thisHostAndPort = "localhost:9998"
+var thisPort = ""
+var thisHostAndPort = ""
+var controllerHostAndPort = ""
 var msgHandlerMap = make(map[string]*message.MessageHandler)
 var msgHandlerMapLock = sync.RWMutex{}
 var hashedDirToChan = make(map[string]chan bool)
@@ -271,29 +273,27 @@ func sendChunkBytes(msgHandler *message.MessageHandler, chunkId int32, chunkByte
 }
 
 func parseCLI() {
+	// /directory -port 5555 localhost:9999
 	cli := os.Args
 
-	if len(cli) < 2 {
+	if len(cli) < 4 {
 		fmt.Println("Missing arguments")
 		os.Exit(3)
 	}
+
+	host, _ := os.Hostname()
+	thisDir = cli[1]
+	thisPort = cli[3]
+	thisHostAndPort = host + ":" + thisPort
+	controllerHostAndPort = cli[4]
 }
 
 func main() {
-	// directory of the storage path and hostname:port of the controller
 
-	//storagePath := os.Args[1]
-	//hostAndPort := strings.Split(os.Args[2], ":")
-	//hostname := hostnameAndPort[0]
-	//port, err := strconv.Atoi(hostnameAndPort[1])
-
-	//if err != nil {
-	//	log.Fatalln(err.Error())
-	//	return
-	//}
+	parseCLI()
 
 	// Establish connection to the controller
-	conn, err := net.Dial("tcp", "localhost:9999")
+	conn, err := net.Dial("tcp", controllerHostAndPort)
 	if err != nil {
 		log.Fatalln(err.Error())
 		return
@@ -301,25 +301,10 @@ func main() {
 	go startHeartBeat(conn)
 
 	// Establish storage node server
-	listener, err := net.Listen("tcp", ":9998")
+	listener, err := net.Listen("tcp", ":"+thisPort)
 	if err != nil {
 		log.Fatalln(err.Error())
 		return
 	}
 	listenToIncomingConnection(listener)
-
-	//for {
-	//	if conn, err := listener.Accept(); err == nil {
-	//		msgHandler := message.NewMessageHandler(conn)
-	//		print(msgHandler)
-	//		// go handleClient(msgHandler, &m)
-	//	}
-	//}
-
-	//msg := message.Request{Directory: "", Ch}
-	//msg = messages.Chat{Username: user, MessageBody: messageBody}
-	//dirMsg := messages.Direct{DestinationUsername: destinationUser, Msg: &msg}
-	//wrapper = &messages.Wrapper{
-	//	Msg: &messages.Wrapper_DirectMessage{DirectMessage: &dirMsg},
-	//}
 }
