@@ -2,6 +2,7 @@ package main
 
 /* Source: https://socketloop.com/tutorials/golang-how-to-split-or-chunking-a-file-to-smaller-pieces */
 /* Source: https://www.socketloop.com/tutorials/golang-recombine-chunked-files-example */
+/* Cmd to run: go run client/client.go -put ../../L2-tjakrak/log2.txt ../../L2-tjakrak/log2.txt localhost:9999 */
 
 import (
 	"encoding/base64"
@@ -12,6 +13,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -23,6 +25,7 @@ type chunkStruct struct {
 
 var hdfsFileDir = ""
 var localFileDir = ""
+var controllerHostPort = ""
 var msgHandlerMap = make(map[string]*message.MessageHandler)
 var idToChunk []chunkStruct
 var chunkContainerLock = sync.RWMutex{}
@@ -107,15 +110,15 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 	for {
 		wrapper, _ := msgHandler.Receive()
 
+		// Check where is the msg coming from
 		switch msg := wrapper.Msg.(type) {
 		case *message.Wrapper_ControllerResMessage:
-
 			if msg.ControllerResMessage.Type == 0 { // GET
 				chunkIdToSNInfo := msg.ControllerResMessage.GetStorageInfoPerChunk()
 				chunkSize := msg.ControllerResMessage.GetChunkSize()
 				idToChunk = make([]chunkStruct, chunkSize)
 
-				// Iterating through each chunkId and storage location to store the chunk
+				// Iterating through each chunkId to get and store chunk to an array
 				for chunkId, snList := range chunkIdToSNInfo {
 					sendGetRequestSN(snList, chunkId)
 				}
@@ -186,38 +189,6 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 	}
 }
 
-func sendRequestController(msgHandler *message.MessageHandler, command string, path string) {
-
-	var msg = message.ClientRequest{}
-	switch command {
-	case "-get":
-
-	case "-put":
-		file, err := os.Open(localFileDir) // For read access.
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer file.Close()
-
-		fStat, err := file.Stat()
-		size := fStat.Size()
-		fmt.Println(size)
-
-		// send request to controller
-		msg = message.ClientRequest{Directory: hdfsFileDir, FileSize: uint64(size), Type: 1}
-	case "-rm":
-		msg = message.ClientRequest{Directory: path, Type: 2}
-	case "-ls":
-		msg = message.ClientRequest{Directory: path, Type: 3}
-	}
-
-	wrapper := &message.Wrapper{
-		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
-	}
-
-	msgHandler.Send(wrapper)
-}
-
 func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk []byte, storageInfoList *message.StorageInfoList) {
 	var msgHandler *message.MessageHandler
 
@@ -262,20 +233,23 @@ func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk
 	select {
 	case res := <-c:
 		fmt.Printf("sub channel %t\n", res)
-		//case <-time.After(60 * time.Second):
-		//	fmt.Println("sub timeout")
+	case <-time.After(60 * time.Second):
+		fmt.Println("sub timeout")
 	}
 }
 
 func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32) {
 	var msgHandler *message.MessageHandler
+	snListLength := len(snList.GetStorageInfo())
 
-	for _, sn := range snList.GetStorageInfo() {
+	// Iterating through the list of storage ids that contains the chunk
+	for i, sn := range snList.GetStorageInfo() {
 		host := sn.Host
 		port := sn.Port
 		hostAndPort := host + ":" + strconv.FormatInt(int64(port), 10)
 		encodedChunkName := base64.StdEncoding.EncodeToString([]byte(hdfsFileDir + "-" + strconv.FormatInt(int64(chunkId), 10)))
 
+		// Check if msg handler already created previously
 		if mh, ok := msgHandlerMap[hostAndPort]; ok {
 			msgHandler = mh
 		} else {
@@ -285,40 +259,139 @@ func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32) {
 				return
 			}
 
+			// Create new msg handler
 			msgHandler = message.NewMessageHandler(conn)
 			msgHandlerMap[hostAndPort] = msgHandler
+			// Listening to the incoming connection from this msg handler
 			go handleIncomingConnection(msgHandler, nil)
 		}
 
+		// Create channel and store it to a map where the key is the chunk id
 		c := make(chan bool)
-
 		idToChunk[chunkId].c = c
 
+		// Build and send protobuf msg request
 		msg := message.ClientRequest{
 			HashedDirectory: encodedChunkName,
 			ChunkId:         chunkId,
 			Type:            0,
 		}
-
 		wrapper := &message.Wrapper{
 			Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
 		}
-
 		msgHandler.Send(wrapper)
 
+		// Wait until get a response from the server
 		select {
+		// Case when we get back a response from the storage node
 		case res := <-c:
 			fmt.Printf("get %t\n", res)
+			break
+		// Case when we don't get any response from the storage node
 		case <-time.After(60 * time.Second):
-			fmt.Printf("get timeout for chunk id: %d\n", chunkId)
+			if i >= snListLength-1 {
+				log.Printf("Fail to get chunk id: %d\n", chunkId)
+			} else {
+				log.Printf("Retrying to fetch chunk id: %d\n", chunkId)
+			}
 		}
 	}
 }
 
-func main() {
+func sendRequestController(opType string) {
 
-	var listOfChunks [][]byte = fileToChunk("../../L2-tjakrak/log.txt", 128*(1<<20))
-	log.Println("Number of parts: " + strconv.FormatInt(int64(len(listOfChunks)), 10))
+	// Create connection with the controller
+	conn, err := net.Dial("tcp", controllerHostPort)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return
+	}
+
+	// Create msg handler obj (client and controller)
+	msgHandler := message.NewMessageHandler(conn)
+	c := make(chan bool)
+
+	// Listening to any messages in the connection from controller
+	go handleIncomingConnection(msgHandler, c)
+
+	var msg = message.ClientRequest{}
+	switch opType {
+	case "-get":
+		msg = message.ClientRequest{Directory: hdfsFileDir, Type: 0}
+	case "-put":
+		file, err := os.Open(localFileDir) // For read access.
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer file.Close()
+
+		fStat, err := file.Stat()
+		size := fStat.Size()
+		log.Printf("Size of the file: %d", size)
+
+		msg = message.ClientRequest{Directory: hdfsFileDir, FileSize: uint64(size), Type: 1}
+	case "-rm":
+		msg = message.ClientRequest{Directory: hdfsFileDir, Type: 2}
+	case "-ls":
+		msg = message.ClientRequest{Directory: hdfsFileDir, Type: 3}
+	}
+
+	wrapper := &message.Wrapper{
+		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
+	}
+
+	msgHandler.Send(wrapper)
+
+	for {
+		select {
+		case res := <-c:
+			fmt.Println(res)
+			os.Exit(0)
+		case <-time.After(60 * time.Second):
+			fmt.Println("timeout")
+		}
+	}
+}
+
+func parseCLI() string {
+	cli := os.Args
+	fmt.Println(cli[1])
+	// Check if the user at least put 3 cmd arg
+	if len(cli) < 4 {
+		fmt.Println("Missing arguments")
+		os.Exit(3)
+	}
+
+	// Get op type (get, put, ls, rm) from the cmd arg
+	opType := strings.ToLower(cli[1])
+
+	if opType == "-get" || opType == "-put" {
+		// Need at least 4 cmd arg because we need both local and hdfs directory
+		if len(cli) < 5 {
+			fmt.Println("Missing arguments")
+			os.Exit(3)
+		}
+
+		// Parse CLI
+		localFileDir = cli[2]
+		hdfsFileDir = cli[3]
+		controllerHostPort = cli[4]
+
+	} else if opType == "-ls" || opType == "-rm" {
+		// Parse CLI
+		hdfsFileDir = cli[2]
+		controllerHostPort = cli[3]
+	}
+
+	return opType
+}
+
+func main() {
+	opType := parseCLI()
+	sendRequestController(opType)
+
+	//var listOfChunks [][]byte = fileToChunk("../../L2-tjakrak/log.txt", 128*(1<<20))
+	//log.Println("Number of parts: " + strconv.FormatInt(int64(len(listOfChunks)), 10))
 
 	/*
 		file.writeAt go
