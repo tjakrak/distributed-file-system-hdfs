@@ -1,18 +1,23 @@
 package main
 
 import (
-	"fmt"
 	"hdfs/data_structure"
 	"hdfs/message"
 	"log"
+	"sync"
+	"time"
+)
+
+// To Run: go run server/controller.go -port 9999
+
+import (
+	"fmt"
 	"math"
 	"math/rand"
 	"net"
 	"os"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 )
 
 // Store storage node information
@@ -288,16 +293,16 @@ func main() {
 		os.Exit(3)
 	}
 
-	port := cli[2]
-
 	go heartBeatChecker(5 * time.Second)
 
+	port := cli[2]
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		log.Fatalln(err.Error())
 		return
 	}
 
+	// Loop to keep listening for new message
 	for {
 		if conn, err := listener.Accept(); err == nil {
 			msgHandler := message.NewMessageHandler(conn)

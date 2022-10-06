@@ -188,6 +188,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 		case nil:
 			log.Println("Received an empty message, terminating server")
 			os.Exit(3)
+
 		default:
 			log.Printf("Unexpected message type: %T", msg)
 		}
@@ -197,18 +198,14 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk []byte, storageInfoList *message.StorageInfoList) {
 	var msgHandler *message.MessageHandler
 
-	if mh, ok := msgHandlerMap[hostAndPort]; ok {
-		msgHandler = mh
-	} else {
-		conn, err := net.Dial("tcp", hostAndPort)
-		if err != nil {
-			log.Fatalln(err.Error())
-			return
-		}
-
-		msgHandler = message.NewMessageHandler(conn)
-		msgHandlerMap[hostAndPort] = msgHandler
+	conn, err := net.Dial("tcp", hostAndPort)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return
 	}
+
+	msgHandler = message.NewMessageHandler(conn)
+	msgHandlerMap[hostAndPort] = msgHandler
 
 	c := make(chan bool)
 	// Listening response from storage
@@ -241,6 +238,8 @@ func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk
 	case <-time.After(60 * time.Second):
 		fmt.Println("sub timeout")
 	}
+
+	close(c)
 }
 
 func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32) {

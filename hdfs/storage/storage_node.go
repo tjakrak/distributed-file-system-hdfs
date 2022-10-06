@@ -270,12 +270,17 @@ func sendChunkBytes(msgHandler *message.MessageHandler, chunkId int32, chunkByte
 	msgHandler.Send(wrapper)
 }
 
+func parseCLI() {
+	cli := os.Args
+
+	if len(cli) < 2 {
+		fmt.Println("Missing arguments")
+		os.Exit(3)
+	}
+}
+
 func main() {
 	// directory of the storage path and hostname:port of the controller
-	//if len(os.Args) < 2 {
-	//	fmt.Println("Missing arguments")
-	//	os.Exit(3)
-	//}
 
 	//storagePath := os.Args[1]
 	//hostAndPort := strings.Split(os.Args[2], ":")
