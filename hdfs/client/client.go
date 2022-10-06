@@ -205,7 +205,6 @@ func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk
 	}
 
 	msgHandler = message.NewMessageHandler(conn)
-	msgHandlerMap[hostAndPort] = msgHandler
 
 	c := make(chan bool)
 	// Listening response from storage
@@ -259,8 +258,8 @@ func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32) {
 		} else {
 			conn, err := net.Dial("tcp", hostAndPort)
 			if err != nil {
-				log.Fatalln(err.Error())
-				return
+				fmt.Println(err)
+				continue
 			}
 
 			// Create new msg handler
