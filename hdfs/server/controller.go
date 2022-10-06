@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"hdfs/data_structure"
 	"hdfs/message"
 	"log"
 	"math"
 	"math/rand"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,32 +51,35 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 			log.Println(directory)
 
 			if msg.ClientReqMessage.Type == 0 { // GET
-				chunkIdToSNIdList, err := fileSystemTree.GetFile(directory)
 				chunkIdToSNInfo := make(map[int32]*message.StorageInfoList)
 
-				if err != nil {
-					// file does not exist
-				}
+				// Get file based on the directory
+				chunkIdToSNIdList, err := fileSystemTree.GetFile(directory)
 
-				for chunkId, snIdList := range chunkIdToSNIdList {
-					storageInfoList := new(message.StorageInfoList)
+				var resMsg = message.ControllerResponse{}
+				if err != nil { // If file does not exist
+					resMsg = message.ControllerResponse{Error: err.Error()}
+				} else { // If file does exist
+					for chunkId, snIdList := range chunkIdToSNIdList {
+						storageInfoList := new(message.StorageInfoList)
 
-					for _, snId := range snIdList {
-						host := snIdToMemberInfo[int(snId)].hostname
-						port := snIdToMemberInfo[int(snId)].port
-						isAlive := snIdToMemberInfo[int(snId)].isAlive
+						for _, snId := range snIdList {
+							host := snIdToMemberInfo[int(snId)].hostname
+							port := snIdToMemberInfo[int(snId)].port
+							isAlive := snIdToMemberInfo[int(snId)].isAlive
 
-						storageInfo := message.StorageInfo{Host: host, Port: port, IsAlive: isAlive}
-						storageInfoList.StorageInfo = append(storageInfoList.StorageInfo, &storageInfo)
+							storageInfo := message.StorageInfo{Host: host, Port: port, IsAlive: isAlive}
+							storageInfoList.StorageInfo = append(storageInfoList.StorageInfo, &storageInfo)
+						}
+
+						chunkIdToSNInfo[int32(chunkId)] = storageInfoList
 					}
 
-					chunkIdToSNInfo[int32(chunkId)] = storageInfoList
-				}
-
-				resMsg := message.ControllerResponse{
-					StorageInfoPerChunk: chunkIdToSNInfo,
-					ChunkSize:           uint64(len(chunkIdToSNIdList)),
-					Type:                0,
+					resMsg = message.ControllerResponse{
+						StorageInfoPerChunk: chunkIdToSNInfo,
+						ChunkSize:           uint64(len(chunkIdToSNIdList)),
+						Type:                0,
+					}
 				}
 
 				sendControllerResponseMsg(msgHandler, &resMsg)
@@ -132,7 +137,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
 				if err != nil {
 					log.Println(err)
-					resMsg = message.ControllerResponse{Error: err.Error(), Type: 1}
+					resMsg = message.ControllerResponse{Error: err.Error()}
 				}
 
 				sendControllerResponseMsg(msgHandler, &resMsg)
@@ -140,16 +145,37 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 			} else if msg.ClientReqMessage.Type == 2 { // DELETE
 
 				fileSystemTreeLock.Lock()
-				fileSystemTree.DeleteFile(directory)
+				_, err := fileSystemTree.DeleteFile(directory)
 				fileSystemTreeLock.Unlock()
+
+				resMsg := message.ControllerResponse{}
+				if err != nil {
+					// If the directory end with a file and not a directory
+					// Or directory does not exist
+					resMsg = message.ControllerResponse{Error: err.Error()}
+				} else {
+					// If the path provided by the client is a directory
+					resMsg = message.ControllerResponse{Type: 2}
+				}
+
+				sendControllerResponseMsg(msgHandler, &resMsg)
 
 			} else if msg.ClientReqMessage.Type == 3 { // LS
 
 				fileSystemTreeLock.RLock()
-				fileList, _ := fileSystemTree.ShowFiles(directory)
+				fileList, err := fileSystemTree.ShowFiles(directory)
 				fileSystemTreeLock.RUnlock()
 
-				resMsg := message.ControllerResponse{FileList: fileList, Type: 3}
+				resMsg := message.ControllerResponse{}
+				if err != nil {
+					// If the directory end with a file and not a directory
+					// Or directory does not exist
+					resMsg = message.ControllerResponse{Error: err.Error()}
+				} else {
+					// If the path provided by the client is a directory
+					resMsg = message.ControllerResponse{FileList: fileList, Type: 3}
+				}
+
 				sendControllerResponseMsg(msgHandler, &resMsg)
 			}
 
@@ -254,37 +280,19 @@ func sendHeartbeatMsg(msgHandler *message.MessageHandler, msg *message.Heartbeat
 
 func main() {
 
-	//sn1 := storageNode{
-	//	hostname:   "A",
-	//	port:       1111,
-	//	isAlive:    true,
-	//	lastHB:     time.Time{},
-	//	spaceAvail: 0,
-	//}
-	//
-	//sn2 := storageNode{
-	//	hostname:   "B",
-	//	port:       2222,
-	//	isAlive:    true,
-	//	lastHB:     time.Time{},
-	//	spaceAvail: 0,
-	//}
-	//
-	//sn3 := storageNode{
-	//	hostname:   "C",
-	//	port:       3333,
-	//	isAlive:    true,
-	//	lastHB:     time.Time{},
-	//	spaceAvail: 0,
-	//}
-	//
-	//snIdToMemberInfo[1] = &sn1
-	//snIdToMemberInfo[2] = &sn2
-	//snIdToMemberInfo[3] = &sn3
+	cli := os.Args
+
+	// Check if the user put a port
+	if len(cli) != 3 || strings.ToLower(cli[1]) != "-port" {
+		fmt.Println("Missing arguments/too much arguments")
+		os.Exit(3)
+	}
+
+	port := cli[2]
 
 	go heartBeatChecker(5 * time.Second)
 
-	listener, err := net.Listen("tcp", ":9999")
+	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		log.Fatalln(err.Error())
 		return
