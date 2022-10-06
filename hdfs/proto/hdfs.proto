@@ -3,6 +3,8 @@ option go_package = "./message";
 
 /* protoc -I=/Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs/proto --go_out=/Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs /Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs/proto/hdfs.proto */
 
+protoc -I=/bigdata/rgtjakrakartadinata/P1-gobald/hdfs/proto --go_out=/bigdata/rgtjakrakartadinata/P1-gobald/hdfs /bigdata/rgtjakrakartadinata/P1-gobald/hdfs/proto/hdfs.proto
+
 enum operationType {
   GET = 0;
   PUT = 1;
