@@ -3,9 +3,9 @@ package main
 /* Source: https://socketloop.com/tutorials/golang-how-to-split-or-chunking-a-file-to-smaller-pieces */
 /* Source: https://www.socketloop.com/tutorials/golang-recombine-chunked-files-example */
 /* Cmd to run:
-PUT: go run client/client.go -put ../../L2-tjakrak/log2.txt ../../L2-tjakrak/log2.txt localhost:9999
+PUT: go run client/client.go -put ../../L2-tjakrak/log2.txt home/log2.txt localhost:9999
 LS: go run client/client.go -ls ../../L2-tjakrak/ localhost:9999
-GET: go run client/client.go -get s3/log.txt ../../L2-tjakrak/log2.txt localhost:9999
+GET: go run client/client.go -get home/log2.txt s3/log.txt localhost:9999
      go run client/client.go -get <hdfs_dir> <local_dir> <controller>
 */
 
@@ -170,7 +170,7 @@ func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk
 		return
 	}
 
-	msgHandler = message.NewMessageHandler(conn, hostAndPort)
+	msgHandler = message.NewMessageHandler(conn, "")
 
 	c := make(chan bool)
 	// Listening response from storage
@@ -229,7 +229,7 @@ func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32, wg *sync.W
 			}
 
 			// Create new msg handler
-			msgHandler = message.NewMessageHandler(conn, hostAndPort)
+			msgHandler = message.NewMessageHandler(conn, "")
 			msgHandlerMap[hostAndPort] = msgHandler
 			// Listening to the incoming connection from this msg handler
 			go handleIncomingConnection(msgHandler, nil)
@@ -254,7 +254,7 @@ func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32, wg *sync.W
 		select {
 		// Case when we get back a response from the storage node
 		case res := <-c:
-			fmt.Printf("get %t\n", res)
+			fmt.Printf("get chunk %d: %t\n", chunkId, res)
 			fileWriteLock.Lock()
 			_, err := fd.WriteAt(idToChunk[chunkId].chunkByte, int64(chunkId*128000000))
 
@@ -286,7 +286,7 @@ func sendRequestController(opType string) {
 	}
 
 	// Create msg handler obj (client and controller)
-	msgHandler := message.NewMessageHandler(conn, controllerHostPort)
+	msgHandler := message.NewMessageHandler(conn, "")
 	c := make(chan bool)
 
 	// Listening to any messages in the connection from controller

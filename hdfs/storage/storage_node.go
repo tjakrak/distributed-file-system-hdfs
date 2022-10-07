@@ -1,5 +1,7 @@
 package main
 
+// source: https://medium.com/@arpith/resetting-a-ticker-in-go-63858a2c17ec
+
 import (
 	"bufio"
 	"fmt"
@@ -24,6 +26,9 @@ var msgHandlerMap = make(map[string]*message.MessageHandler)
 var msgHandlerMapLock = sync.RWMutex{}
 var hashedDirToChan = make(map[string]chan bool)
 var hashedDirToChanLock = sync.RWMutex{}
+var lastHB = time.Time{}
+var lastHBLock = sync.Mutex{}
+var waitAck chan bool
 
 func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
@@ -51,11 +56,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 				if isStored && isReplicated {
 					sendAck(msgHandler, "", 1)
 				}
-				//storageInfoListPerChunk := msg.ClientReqMessage.GetStorageInfoPerChunk()
-
-			} else if msg.ClientReqMessage.Type == 2 { // DELETE
 			}
-
 		case *message.Wrapper_StorageReqMessage:
 			hashedDir := msg.StorageReqMessage.GetHashedDirectory()
 			chunkBytes := msg.StorageReqMessage.GetChunkBytes()
@@ -83,11 +84,18 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 			if id != 0 {
 				log.Printf("%d Register is successful\n", id)
 				thisId = id
+			} else {
+				log.Println("Get ack from controller")
 			}
+
+			lastHBLock.Lock()
+			lastHB = time.Now()
+			lastHBLock.Unlock()
 
 		case nil:
 			log.Println("Received an empty message, terminating server")
-			time.Sleep(30 * time.Second)
+			return
+			//time.Sleep(5 * time.Second)
 		default:
 			log.Printf("Unexpected message type: %T", msg)
 		}
@@ -97,15 +105,18 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 func listenToIncomingConnection(listener net.Listener) {
 	for {
 		if conn, err := listener.Accept(); err == nil {
-			msgHandler := message.NewMessageHandler(conn)
+			msgHandler := message.NewMessageHandler(conn, "")
 			go handleIncomingConnection(msgHandler)
 		}
 	}
 }
 
-func startHeartBeat(conn net.Conn) {
-	msgHandler := message.NewMessageHandler(conn)
-	defer msgHandler.Close()
+func startHeartBeat(conn net.Conn, controllerHostPort string) {
+	msgHandler := message.NewMessageHandler(conn, controllerHostPort)
+
+	lastHBLock.Lock()
+	lastHB = time.Now()
+	lastHBLock.Unlock()
 
 	go handleIncomingConnection(msgHandler)
 
@@ -124,6 +135,39 @@ func startHeartBeat(conn net.Conn) {
 			wrapper := &message.Wrapper{
 				Msg: &message.Wrapper_HbMessage{HbMessage: &msg},
 			}
+
+			lastHBLock.Lock()
+			if (lastHB.Add(5 * time.Second)).Before(time.Now()) {
+				fmt.Println("Controller is dead")
+				fmt.Println("Reconnecting")
+
+				ticker.Stop()
+
+				// Reconnecting to controller
+				n := 0
+				for n < 5 {
+					var err error
+					msgHandler, err = msgHandler.Retry()
+
+					if err == nil {
+						log.Println("Successfully reconnect to the controller")
+						break
+					}
+
+					log.Println("Controller is inactive. Retrying...")
+					time.Sleep(5 * time.Second)
+					n++
+				}
+
+				go handleIncomingConnection(msgHandler)
+
+				lastHB = time.Now()
+				fmt.Println(".....")
+				time.Sleep(5 * time.Second)
+				ticker = time.NewTicker(3 * time.Second)
+			}
+			lastHBLock.Unlock()
+
 			msgHandler.Send(wrapper)
 			log.Println("Send heartbeat")
 		}
@@ -187,11 +231,12 @@ func sendRequestStorage(hostAndPort string, hashedDir string, chunk []byte, wg *
 	} else {
 		conn, err := net.Dial("tcp", hostAndPort)
 		if err != nil {
-			log.Fatalln(err.Error())
+			log.Println(err)
+			log.Printf("Replicate to: %s has failed\n", hostAndPort)
 			return
 		}
 
-		msgHandler = message.NewMessageHandler(conn)
+		msgHandler = message.NewMessageHandler(conn, hostAndPort)
 		msgHandlerMap[hostAndPort] = msgHandler
 	}
 	msgHandlerMapLock.Unlock()
@@ -298,7 +343,7 @@ func main() {
 		log.Fatalln(err.Error())
 		return
 	}
-	go startHeartBeat(conn)
+	go startHeartBeat(conn, controllerHostAndPort)
 
 	// Establish storage node server
 	listener, err := net.Listen("tcp", ":"+thisPort)

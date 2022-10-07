@@ -3,16 +3,19 @@ package message
 import (
 	"encoding/binary"
 	"google.golang.org/protobuf/proto"
+	"log"
 	"net"
 )
 
 type MessageHandler struct {
-	conn net.Conn
+	conn     net.Conn
+	hostPort string
 }
 
-func NewMessageHandler(conn net.Conn) *MessageHandler {
+func NewMessageHandler(conn net.Conn, hostPort string) *MessageHandler {
 	m := &MessageHandler{
-		conn: conn,
+		conn:     conn,
+		hostPort: hostPort,
 	}
 
 	return m
@@ -67,6 +70,22 @@ func (m *MessageHandler) Receive() (*Wrapper, error) {
 	wrapper := &Wrapper{}
 	err := proto.Unmarshal(payload, wrapper)
 	return wrapper, err
+}
+
+func (m *MessageHandler) Retry() (*MessageHandler, error) {
+	if m.conn != nil {
+		m.conn.Close()
+	}
+
+	var err error
+	m.conn, err = net.Dial("tcp", m.hostPort)
+
+	if err != nil {
+		log.Println(err)
+		return m, err
+	}
+
+	return m, nil
 }
 
 func (m *MessageHandler) Close() {

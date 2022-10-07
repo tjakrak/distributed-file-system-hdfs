@@ -189,21 +189,29 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
 			// Id equals 0 means the storage node has not registered yet
 			if id == 0 {
-				newId, isSuccess := registerNewSN(msg)
+				newId, isSuccess := registerSN(msg, true)
 				if !isSuccess {
 					log.Println("Fail to register storage node")
 				} else {
+					fmt.Println("register success")
 					resMsg := message.Heartbeat{Id: int32(newId)}
 					sendHeartbeatMsg(msgHandler, &resMsg)
 				}
 			} else {
+				if _, ok := snIdToMemberInfo[int(id)]; !ok {
+					registerSN(msg, false)
+				}
+
+				resMsg := message.Heartbeat{Id: 0}
+
+				sendHeartbeatMsg(msgHandler, &resMsg)
 				heartBeatHandler(int(id))
 			}
 		}
 	}
 }
 
-func registerNewSN(msg *message.Wrapper_HbMessage) (int, bool) {
+func registerSN(msg *message.Wrapper_HbMessage, isNew bool) (int, bool) {
 	hostAndPort := msg.HbMessage.GetHostAndPort()
 	spaceAvail := msg.HbMessage.GetSpaceAvailable()
 
@@ -216,14 +224,20 @@ func registerNewSN(msg *message.Wrapper_HbMessage) (int, bool) {
 	hostAndPortArr := strings.FieldsFunc(hostAndPort, f)
 	host := hostAndPortArr[0]
 	port, _ := strconv.Atoi(hostAndPortArr[1])
-	assignedId := snLatestId + 1
+
+	var assignedId int
+	if isNew {
+		assignedId = snLatestId + 1
+		snLatestId += 1
+	} else {
+		assignedId = int(msg.HbMessage.GetId())
+	}
+
 	sn := storageNode{host, int32(port), true, time.Now(), spaceAvail}
 
 	// Register storage node
 	snIdToMemberInfo[assignedId] = &sn
 	snLocation[hostAndPort] = true
-
-	snLatestId += 1
 
 	snRegisterNewLock.Unlock()
 
@@ -249,7 +263,7 @@ func heartBeatHandler(id int) {
 	currTime := time.Now()
 	snIdToMemberInfoLock.Lock()
 	snIdToMemberInfo[id].lastHB = currTime
-	defer snIdToMemberInfoLock.Unlock()
+	snIdToMemberInfoLock.Unlock()
 }
 
 func getRandNumber() []int {
@@ -305,7 +319,7 @@ func main() {
 	// Loop to keep listening for new message
 	for {
 		if conn, err := listener.Accept(); err == nil {
-			msgHandler := message.NewMessageHandler(conn)
+			msgHandler := message.NewMessageHandler(conn, "")
 			go handleIncomingConnection(msgHandler)
 		}
 	}
