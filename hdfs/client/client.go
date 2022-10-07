@@ -32,47 +32,9 @@ var hdfsFileDir = ""
 var localFileDir = ""
 var controllerHostPort = ""
 var msgHandlerMap = make(map[string]*message.MessageHandler)
+var fileWriteLock = sync.Mutex{}
+var fd *os.File
 var idToChunk []chunkStruct
-var chunkContainerLock = sync.RWMutex{}
-
-func chunkToFile(chunks []chunkStruct) {
-	// Create a file to store the file
-	newFile := localFileDir
-	_, err := os.Create(newFile)
-
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	// Open the newly created file
-	file, err := os.OpenFile(newFile, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
-
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	// To keep track the pointer position when we are appending
-	var writePosition int = 0
-	for i, chunk := range chunks {
-		chunkSize := len(chunk.chunkByte)
-		writePosition = writePosition + chunkSize
-
-		_, err := file.Write(chunk.chunkByte)
-
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-
-		file.Sync() //flush to disk
-		log.Println("Recombining part [", i, "] into : ", newFile)
-
-	}
-
-	file.Close()
-}
 
 func fileToChunk(filename string, chunkSize uint64) [][]byte {
 	var chunkList [][]byte
@@ -128,18 +90,16 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 				chunkIdToSNInfo := msg.ControllerResMessage.GetStorageInfoPerChunk()
 				chunkSize := msg.ControllerResMessage.GetChunkSize()
 				idToChunk = make([]chunkStruct, chunkSize)
+
 				var wg sync.WaitGroup
 
 				// Iterating through each chunkId to get and store chunk to an array
 				for chunkId, snList := range chunkIdToSNInfo {
-					go sendGetRequestSN(snList, chunkId, &wg)
 					wg.Add(1)
+					go sendGetRequestSN(snList, chunkId, &wg)
 				}
 
 				wg.Wait()
-
-				// Put all the chunks together into a file
-				chunkToFile(idToChunk)
 
 			} else if msg.ControllerResMessage.Type == 1 { // PUT
 				chunkIdToSNInfo := msg.ControllerResMessage.GetStorageInfoPerChunk()
@@ -295,8 +255,16 @@ func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32, wg *sync.W
 		// Case when we get back a response from the storage node
 		case res := <-c:
 			fmt.Printf("get %t\n", res)
+			fileWriteLock.Lock()
+			_, err := fd.WriteAt(idToChunk[chunkId].chunkByte, int64(chunkId*128000000))
+
+			if err != nil {
+				log.Println(err)
+			}
+
+			fileWriteLock.Unlock()
 			wg.Done()
-			break
+			return
 		// Case when we don't get any response from the storage node
 		case <-time.After(60 * time.Second):
 			if i >= snListLength-1 {
@@ -327,7 +295,26 @@ func sendRequestController(opType string) {
 	var msg = message.ClientRequest{}
 	switch opType {
 	case "-get":
+
+		// Create a file to store the file
+		newFile := localFileDir
+		_, err = os.Create(newFile)
+
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		// Open the newly created file
+		fd, err = os.OpenFile(newFile, os.O_WRONLY, os.ModeAppend)
+
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
 		msg = message.ClientRequest{Directory: hdfsFileDir, Type: 0}
+
 	case "-put":
 		file, err := os.Open(localFileDir) // For read access.
 		if err != nil {
@@ -335,7 +322,7 @@ func sendRequestController(opType string) {
 		}
 		defer file.Close()
 
-		fStat, err := file.Stat()
+		fStat, _ := file.Stat()
 		size := fStat.Size()
 		log.Printf("Size of the file: %d", size)
 
