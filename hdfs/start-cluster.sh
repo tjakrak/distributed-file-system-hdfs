@@ -14,14 +14,14 @@ echo "Creating log directory: ${log_dir}"
 mkdir -pv "${log_dir}"
 
 echo "Starting Controller..."
-ssh "${controller}" "${HOME}/go/bin/controller -port 23001" &> "${log_dir}/controller.log" &
+ssh "${controller}" "${HOME}/go/bin/controller -port 23005" &> "${log_dir}/controller.log" &
 
 echo "${controller}"
 
 echo "Starting Storage Nodes..."
 for node in ${nodes[@]}; do
     echo "${node}"
-    ssh "${node}" "${HOME}/go/bin/storage_node /bigdata/${USER}/storage -port 23001 ${controller}:23001" &> "${log_dir}/${node}.log" &
+    ssh "${node}" "${HOME}/go/bin/storage_node /bigdata/${USER}/storage -port 23004 ${controller}:23005" &> "${log_dir}/${node}.log" &
 done
 
-echo "Startup complete!"
+echo "Startup complete!":w
