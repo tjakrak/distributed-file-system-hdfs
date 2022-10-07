@@ -6,6 +6,7 @@ package main
 PUT: go run client/client.go -put ../../L2-tjakrak/log2.txt ../../L2-tjakrak/log2.txt localhost:9999
 LS: go run client/client.go -ls ../../L2-tjakrak/ localhost:9999
 GET: go run client/client.go -get s3/log.txt ../../L2-tjakrak/log2.txt localhost:9999
+     go run client/client.go -get <hdfs_dir> <local_dir> <controller>
 */
 
 import (
@@ -127,11 +128,15 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 				chunkIdToSNInfo := msg.ControllerResMessage.GetStorageInfoPerChunk()
 				chunkSize := msg.ControllerResMessage.GetChunkSize()
 				idToChunk = make([]chunkStruct, chunkSize)
+				var wg sync.WaitGroup
 
 				// Iterating through each chunkId to get and store chunk to an array
 				for chunkId, snList := range chunkIdToSNInfo {
-					sendGetRequestSN(snList, chunkId)
+					go sendGetRequestSN(snList, chunkId, &wg)
+					wg.Add(1)
 				}
+
+				wg.Wait()
 
 				// Put all the chunks together into a file
 				chunkToFile(idToChunk)
@@ -147,6 +152,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 					for _, sn := range snList.GetStorageInfo() {
 						host := sn.Host
 						port := sn.Port
+
 						hostAndPort := host + ":" + strconv.FormatInt(int64(port), 10)
 						encodedChunkName := base64.StdEncoding.EncodeToString([]byte(hdfsFileDir + "-" + strconv.FormatInt(int64(chunkId), 10)))
 
@@ -204,7 +210,7 @@ func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk
 		return
 	}
 
-	msgHandler = message.NewMessageHandler(conn)
+	msgHandler = message.NewMessageHandler(conn, hostAndPort)
 
 	c := make(chan bool)
 	// Listening response from storage
@@ -241,7 +247,7 @@ func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk
 	close(c)
 }
 
-func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32) {
+func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32, wg *sync.WaitGroup) {
 	var msgHandler *message.MessageHandler
 	snListLength := len(snList.GetStorageInfo())
 
@@ -263,7 +269,7 @@ func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32) {
 			}
 
 			// Create new msg handler
-			msgHandler = message.NewMessageHandler(conn)
+			msgHandler = message.NewMessageHandler(conn, hostAndPort)
 			msgHandlerMap[hostAndPort] = msgHandler
 			// Listening to the incoming connection from this msg handler
 			go handleIncomingConnection(msgHandler, nil)
@@ -289,6 +295,7 @@ func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32) {
 		// Case when we get back a response from the storage node
 		case res := <-c:
 			fmt.Printf("get %t\n", res)
+			wg.Done()
 			break
 		// Case when we don't get any response from the storage node
 		case <-time.After(60 * time.Second):
@@ -311,7 +318,7 @@ func sendRequestController(opType string) {
 	}
 
 	// Create msg handler obj (client and controller)
-	msgHandler := message.NewMessageHandler(conn)
+	msgHandler := message.NewMessageHandler(conn, controllerHostPort)
 	c := make(chan bool)
 
 	// Listening to any messages in the connection from controller
@@ -376,8 +383,14 @@ func parseCLI() string {
 		}
 
 		// Parse CLI
-		localFileDir = cli[2]
-		hdfsFileDir = cli[3]
+		if opType == "-put" {
+			localFileDir = cli[2]
+			hdfsFileDir = cli[3]
+		} else {
+			localFileDir = cli[3]
+			hdfsFileDir = cli[2]
+		}
+
 		controllerHostPort = cli[4]
 
 	} else if opType == "-ls" || opType == "-rm" {
