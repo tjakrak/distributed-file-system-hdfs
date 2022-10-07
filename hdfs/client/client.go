@@ -127,11 +127,15 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 				chunkIdToSNInfo := msg.ControllerResMessage.GetStorageInfoPerChunk()
 				chunkSize := msg.ControllerResMessage.GetChunkSize()
 				idToChunk = make([]chunkStruct, chunkSize)
+				var wg sync.WaitGroup
 
 				// Iterating through each chunkId to get and store chunk to an array
 				for chunkId, snList := range chunkIdToSNInfo {
-					sendGetRequestSN(snList, chunkId)
+					wg.Add(1)
+					go sendGetRequestSN(snList, chunkId, &wg)
 				}
+
+				wg.Wait()
 
 				// Put all the chunks together into a file
 				chunkToFile(idToChunk)
@@ -147,6 +151,8 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 					for _, sn := range snList.GetStorageInfo() {
 						host := sn.Host
 						port := sn.Port
+						fmt.Println(host)
+						fmt.Println(port)
 						hostAndPort := host + ":" + strconv.FormatInt(int64(port), 10)
 						encodedChunkName := base64.StdEncoding.EncodeToString([]byte(hdfsFileDir + "-" + strconv.FormatInt(int64(chunkId), 10)))
 
@@ -177,8 +183,9 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 				chunkId := msg.StorageResMessage.GetChunkId()
 				chunkBytes := msg.StorageResMessage.GetChunkBytes()
 
-				idToChunk[chunkId].c <- true
+				fmt.Println(len(chunkBytes))
 				idToChunk[chunkId].chunkByte = chunkBytes
+				idToChunk[chunkId].c <- true
 
 			} else if msg.StorageResMessage.Type == 1 { // PUT
 				fmt.Println("success")
@@ -241,7 +248,7 @@ func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk
 	close(c)
 }
 
-func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32) {
+func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32, wg *sync.WaitGroup) {
 	var msgHandler *message.MessageHandler
 	snListLength := len(snList.GetStorageInfo())
 
@@ -289,7 +296,8 @@ func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32) {
 		// Case when we get back a response from the storage node
 		case res := <-c:
 			fmt.Printf("get %t\n", res)
-			break
+			wg.Done()
+			return
 		// Case when we don't get any response from the storage node
 		case <-time.After(60 * time.Second):
 			if i >= snListLength-1 {
@@ -393,3 +401,4 @@ func main() {
 	opType := parseCLI()
 	sendRequestController(opType)
 }
+
