@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+// to run: go run storage/storage_node.go s1/ -port 9998 localhost:9999
+
 var thisId int32 = 0
 var thisDir = ""
 var thisStorage = 0

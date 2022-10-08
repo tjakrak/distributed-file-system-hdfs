@@ -6,7 +6,7 @@ import (
 )
 
 type FileSystemTree struct {
-	root *node
+	Root *node
 }
 
 var f = func(c rune) bool {
@@ -21,7 +21,7 @@ func NewFileSystemTree() *FileSystemTree {
 
 func (fst *FileSystemTree) GetFile(filePath string) (map[int][]int32, error) {
 	filePathArr := strings.FieldsFunc(filePath, f)
-	currFile := fst.root
+	currFile := fst.Root
 	totalFiles := len(filePathArr)
 	var chunks map[int][]int32
 
@@ -51,7 +51,7 @@ func (fst *FileSystemTree) GetFile(filePath string) (map[int][]int32, error) {
 
 func (fst *FileSystemTree) PutFile(filePath string, chunkIdToLocation map[int][]int32) error {
 	filePathArr := strings.FieldsFunc(filePath, f)
-	currFile := fst.root
+	currFile := fst.Root
 	totalFiles := len(filePathArr)
 
 	// Iterating file path
@@ -85,7 +85,7 @@ func (fst *FileSystemTree) PutFile(filePath string, chunkIdToLocation map[int][]
 
 func (fst *FileSystemTree) DeleteFile(filePath string) (bool, error) {
 	filePathArr := strings.FieldsFunc(filePath, f)
-	currFile := fst.root
+	currFile := fst.Root
 	totalFiles := len(filePathArr)
 
 	// Iterating file path
@@ -113,7 +113,7 @@ func (fst *FileSystemTree) DeleteFile(filePath string) (bool, error) {
 
 func (fst *FileSystemTree) ShowFiles(filePath string) ([]string, error) {
 	filePathArr := strings.FieldsFunc(filePath, f)
-	currFile := fst.root
+	currFile := fst.Root
 
 	for _, file := range filePathArr {
 		if !currFile.IsChildExist(file) {
@@ -139,64 +139,64 @@ func (fst *FileSystemTree) ShowFiles(filePath string) ([]string, error) {
 }
 
 type node struct {
-	name     string
-	fileType string          // filetype to indicate directory or a file
-	chunks   map[int][]int32 // key: chunkId | val: will be node id
-	children map[string]*node
+	Name     string
+	FileType string          // filetype to indicate directory or a file
+	Chunks   map[int][]int32 // key: chunkId | val: will be node id
+	Children map[string]*node
 }
 
 func NewNode(name string, fileType string) *node {
 	n := node{name, fileType, nil, nil}
 
 	if fileType == "directory" {
-		n.children = make(map[string]*node)
+		n.Children = make(map[string]*node)
 	}
 
 	return &n
 }
 
 func (n *node) GetName() string {
-	return n.name
+	return n.Name
 }
 
 func (n *node) GetFileType() string {
-	return n.fileType
+	return n.FileType
 }
 
 func (n *node) GetChunks() (map[int][]int32, error) {
-	if n.fileType == "directory" {
+	if n.FileType == "directory" {
 		return nil, errors.New("Not a file: " + n.GetName())
 	}
 
-	return n.chunks, nil
+	return n.Chunks, nil
 }
 
 func (n *node) GetChild(childName string) *node {
-	return n.children[childName]
+	return n.Children[childName]
 }
 
 func (n *node) GetChildren() (map[string]*node, error) {
-	if n.fileType == "file" {
+	if n.FileType == "file" {
 		return nil, errors.New("Not a directory: " + n.GetName())
 	}
 
-	return n.children, nil
+	return n.Children, nil
 }
 
 func (n *node) AddChunks(chunks map[int][]int32) {
-	n.chunks = chunks
+	n.Chunks = chunks
 }
 
 func (n *node) AddChild(child *node) {
-	n.children[child.name] = child
+	n.Children[child.Name] = child
 }
 
 func (n *node) DeleteChild(childName string) {
-	delete(n.children, childName)
+	delete(n.Children, childName)
 }
 
 func (n *node) IsChildExist(childName string) bool {
-	if _, ok := n.children[childName]; ok {
+	if _, ok := n.Children[childName]; ok {
 		return true
 	}
 

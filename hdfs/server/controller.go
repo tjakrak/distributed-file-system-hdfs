@@ -1,32 +1,30 @@
 package main
 
 import (
+	"encoding/gob"
+	"fmt"
 	"hdfs/data_structure"
 	"hdfs/message"
 	"log"
-	"sync"
-	"time"
-)
-
-// To Run: go run server/controller.go -port 9999
-
-import (
-	"fmt"
 	"math"
 	"math/rand"
 	"net"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
+
+// To Run: go run server/controller.go -port 9999
 
 // Store storage node information
 type storageNode struct {
-	hostname   string
-	port       int32
-	isAlive    bool
-	lastHB     time.Time
-	spaceAvail uint64
+	Hostname   string
+	Port       int32
+	IsAlive    bool
+	LastHB     time.Time
+	SpaceAvail uint64
 }
 
 const sizePerChunk int = 128000000 // 128 mb
@@ -59,7 +57,9 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 				chunkIdToSNInfo := make(map[int32]*message.StorageInfoList)
 
 				// Get file based on the directory
+				fileSystemTreeLock.RLock()
 				chunkIdToSNIdList, err := fileSystemTree.GetFile(directory)
+				fileSystemTreeLock.RUnlock()
 
 				var resMsg = message.ControllerResponse{}
 				if err != nil { // If file does not exist
@@ -69,9 +69,11 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 						storageInfoList := new(message.StorageInfoList)
 
 						for _, snId := range snIdList {
-							host := snIdToMemberInfo[int(snId)].hostname
-							port := snIdToMemberInfo[int(snId)].port
-							isAlive := snIdToMemberInfo[int(snId)].isAlive
+							snIdToMemberInfoLock.RLock()
+							host := snIdToMemberInfo[int(snId)].Hostname
+							port := snIdToMemberInfo[int(snId)].Port
+							isAlive := snIdToMemberInfo[int(snId)].IsAlive
+							snIdToMemberInfoLock.RUnlock()
 
 							storageInfo := message.StorageInfo{Host: host, Port: port, IsAlive: isAlive}
 							storageInfoList.StorageInfo = append(storageInfoList.StorageInfo, &storageInfo)
@@ -107,9 +109,11 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 						for k := lastCheckedIndex; k < len(snRandIdList); k++ {
 							id := snRandIdList[k]
 
-							if snIdToMemberInfo[id].isAlive {
-								host := snIdToMemberInfo[id].hostname
-								port := snIdToMemberInfo[id].port
+							if snIdToMemberInfo[id].IsAlive {
+								snIdToMemberInfoLock.RLock()
+								host := snIdToMemberInfo[id].Hostname
+								port := snIdToMemberInfo[id].Port
+								snIdToMemberInfoLock.RUnlock()
 
 								if j == 0 {
 									log.Printf("Send put request to: %d\n", id)
@@ -138,6 +142,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
 				fileSystemTreeLock.Lock()
 				err := fileSystemTree.PutFile(directory, chunkIdToSNIdList)
+				storeToDisk("file_system_tree.gob", "file_system_tree")
 				fileSystemTreeLock.Unlock()
 
 				if err != nil {
@@ -151,6 +156,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
 				fileSystemTreeLock.Lock()
 				_, err := fileSystemTree.DeleteFile(directory)
+				storeToDisk("file_system_tree.gob", "file_system_tree")
 				fileSystemTreeLock.Unlock()
 
 				resMsg := message.ControllerResponse{}
@@ -198,14 +204,19 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 					sendHeartbeatMsg(msgHandler, &resMsg)
 				}
 			} else {
-				if _, ok := snIdToMemberInfo[int(id)]; !ok {
+
+				snIdToMemberInfoLock.RLock()
+				_, ok := snIdToMemberInfo[int(id)]
+				snIdToMemberInfoLock.RUnlock()
+
+				if !ok {
 					registerSN(msg, false)
 				}
 
 				resMsg := message.Heartbeat{Id: 0}
 
-				sendHeartbeatMsg(msgHandler, &resMsg)
 				heartBeatHandler(int(id))
+				sendHeartbeatMsg(msgHandler, &resMsg)
 			}
 		}
 	}
@@ -229,6 +240,7 @@ func registerSN(msg *message.Wrapper_HbMessage, isNew bool) (int, bool) {
 	if isNew {
 		assignedId = snLatestId + 1
 		snLatestId += 1
+		storeToDisk("sn_latest_id.gob", "sn_latest_id")
 	} else {
 		assignedId = int(msg.HbMessage.GetId())
 	}
@@ -236,7 +248,11 @@ func registerSN(msg *message.Wrapper_HbMessage, isNew bool) (int, bool) {
 	sn := storageNode{host, int32(port), true, time.Now(), spaceAvail}
 
 	// Register storage node
+	snIdToMemberInfoLock.Lock()
 	snIdToMemberInfo[assignedId] = &sn
+	storeToDisk("sn_id_to_member_info.gob", "sn_id_to_member_info")
+	snIdToMemberInfoLock.Unlock()
+
 	snLocation[hostAndPort] = true
 
 	snRegisterNewLock.Unlock()
@@ -248,9 +264,9 @@ func heartBeatChecker(duration time.Duration) {
 	for tick := range time.Tick(duration) {
 		snIdToMemberInfoLock.RLock()
 		for id, val := range snIdToMemberInfo {
-			if (val.lastHB.Add(duration)).Before(tick) {
+			if (val.LastHB.Add(duration)).Before(tick) {
 				log.Printf("%d Is dead", id)
-				val.isAlive = false
+				val.IsAlive = false
 			}
 		}
 		snIdToMemberInfoLock.RUnlock()
@@ -262,7 +278,7 @@ func heartBeatHandler(id int) {
 
 	currTime := time.Now()
 	snIdToMemberInfoLock.Lock()
-	snIdToMemberInfo[id].lastHB = currTime
+	snIdToMemberInfo[id].LastHB = currTime
 	snIdToMemberInfoLock.Unlock()
 }
 
@@ -279,6 +295,65 @@ func getRandNumber() []int {
 	snRegisterNewLock.RUnlock()
 
 	return snRandIdList
+}
+
+func storeToDisk(outputFile string, dataName string) {
+	// Create a file
+	file, err := os.Create(outputFile)
+
+	if err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+
+	// Serialize the data
+	dataEncoder := gob.NewEncoder(file)
+
+	if dataName == "file_system_tree" {
+		err = dataEncoder.Encode(fileSystemTree)
+	} else if dataName == "sn_id_to_member_info" {
+		err = dataEncoder.Encode(snIdToMemberInfo)
+	} else if dataName == "sn_latest_id" {
+		err = dataEncoder.Encode(snLatestId)
+	}
+
+	if err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+
+	err = file.Close()
+
+	if err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+}
+
+func getBackupFromDisk(fileName string) {
+	// open data file
+	file, err := os.Open(fileName)
+
+	if err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+
+	dataDecoder := gob.NewDecoder(file)
+	if fileName == "file_system_tree.gob" {
+		err = dataDecoder.Decode(&fileSystemTree)
+	} else if fileName == "sn_id_to_member_info.gob" {
+		err = dataDecoder.Decode(&snIdToMemberInfo)
+	} else if fileName == "sn_latest_id.gob" {
+		err = dataDecoder.Decode(&snLatestId)
+	}
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	file.Close()
 }
 
 func sendControllerResponseMsg(msgHandler *message.MessageHandler, msg *message.ControllerResponse) {
@@ -305,6 +380,17 @@ func main() {
 	if len(cli) != 3 || strings.ToLower(cli[1]) != "-port" {
 		fmt.Println("Missing arguments/too much arguments")
 		os.Exit(3)
+	}
+
+	// Get back up from disk
+	if _, err := os.Stat("./file_system_tree.gob"); err == nil {
+		getBackupFromDisk("file_system_tree.gob")
+	}
+	if _, err := os.Stat("./sn_id_to_member_info.gob"); err == nil {
+		getBackupFromDisk("sn_id_to_member_info.gob")
+	}
+	if _, err := os.Stat("./sn_latest_id.gob"); err == nil {
+		getBackupFromDisk("sn_latest_id.gob")
 	}
 
 	go heartBeatChecker(5 * time.Second)
