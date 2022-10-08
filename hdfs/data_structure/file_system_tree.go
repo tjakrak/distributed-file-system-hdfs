@@ -5,20 +5,23 @@ import (
 	"strings"
 )
 
-type FileSystemTree struct {
-	Root *node
-}
-
 var f = func(c rune) bool {
 	return c == '/'
 }
 
+// FileSystemTree a data structure to store the structure of file tree in hdfs
+type FileSystemTree struct {
+	Root *node
+}
+
+// NewFileSystemTree is a constructor for FileSystemTree
 func NewFileSystemTree() *FileSystemTree {
 	tree := FileSystemTree{NewNode("/", "directory")}
 
 	return &tree
 }
 
+// GetFile getter for FileSystemTree
 func (fst *FileSystemTree) GetFile(filePath string) (map[int][]int32, error) {
 	filePathArr := strings.FieldsFunc(filePath, f)
 	currFile := fst.Root
@@ -49,6 +52,7 @@ func (fst *FileSystemTree) GetFile(filePath string) (map[int][]int32, error) {
 	return chunks, nil
 }
 
+// PutFile navigate and create file and folders base on the filepath
 func (fst *FileSystemTree) PutFile(filePath string, chunkIdToLocation map[int][]int32) error {
 	filePathArr := strings.FieldsFunc(filePath, f)
 	currFile := fst.Root
@@ -83,6 +87,7 @@ func (fst *FileSystemTree) PutFile(filePath string, chunkIdToLocation map[int][]
 	return nil
 }
 
+// DeleteFile delete a file from the file system tree
 func (fst *FileSystemTree) DeleteFile(filePath string) (bool, error) {
 	filePathArr := strings.FieldsFunc(filePath, f)
 	currFile := fst.Root
@@ -93,16 +98,16 @@ func (fst *FileSystemTree) DeleteFile(filePath string) (bool, error) {
 		if !currFile.IsChildExist(file) {
 			return false, errors.New("No such file or directories: " + file)
 		} else {
-			// Delete if we reach the destination file
-			if i >= totalFiles-1 {
+
+			if i >= totalFiles-1 { // If we reach the destination file
 				currFile.DeleteChild(file)
-			} else {
+			} else { // If we are still encounter a directory instead of a file
 				temp := currFile.GetChild(file)
 
 				if temp.GetFileType() == "file" {
 					return false, errors.New("Not a directory: " + file)
 				} else {
-					currFile = temp
+					currFile = temp // Move to the child
 				}
 			}
 		}
@@ -115,7 +120,9 @@ func (fst *FileSystemTree) ShowFiles(filePath string) ([]string, error) {
 	filePathArr := strings.FieldsFunc(filePath, f)
 	currFile := fst.Root
 
+	// Iterating through files in file path
 	for _, file := range filePathArr {
+		// Checking if file path exist
 		if !currFile.IsChildExist(file) {
 			return nil, errors.New("No such file or directories: " + file)
 		} else {
@@ -129,6 +136,7 @@ func (fst *FileSystemTree) ShowFiles(filePath string) ([]string, error) {
 		}
 	}
 
+	// Getting all the files name from the file path and send response to the client
 	children, _ := currFile.GetChildren()
 	fileList := make([]string, 0)
 	for fileName, _ := range children {
@@ -145,6 +153,7 @@ type node struct {
 	Children map[string]*node
 }
 
+// NewNode constructor for node
 func NewNode(name string, fileType string) *node {
 	n := node{name, fileType, nil, nil}
 

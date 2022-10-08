@@ -36,6 +36,8 @@ var fileWriteLock = sync.Mutex{}
 var fd *os.File
 var idToChunk []chunkStruct
 
+// fileToChunk open a file then split it into n chunk based
+// on the chunk size
 func fileToChunk(filename string, chunkSize uint64) [][]byte {
 	var chunkList [][]byte
 
@@ -70,6 +72,8 @@ func fileToChunk(filename string, chunkSize uint64) [][]byte {
 	return chunkList
 }
 
+// handleIncomingConnection is listening to any incoming response/ack message from
+// Storage Node or Controller and handle it accordingly
 func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 
 	defer msgHandler.Close()
@@ -80,13 +84,15 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 		// Check where is the msg coming from
 		switch msg := wrapper.Msg.(type) {
 		case *message.Wrapper_ControllerResMessage:
-			// If file already exist or not exist
+
+			// Handling error when file already exist/ file not found
 			err := msg.ControllerResMessage.GetError()
 			if err != "" {
 				fmt.Println(err)
 			}
 
 			if msg.ControllerResMessage.Type == 0 { // GET
+				// Parse message from protobuf
 				chunkIdToSNInfo := msg.ControllerResMessage.GetStorageInfoPerChunk()
 				chunkSize := msg.ControllerResMessage.GetChunkSize()
 				idToChunk = make([]chunkStruct, chunkSize)
@@ -96,12 +102,13 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 				// Iterating through each chunkId to get and store chunk to an array
 				for chunkId, snList := range chunkIdToSNInfo {
 					wg.Add(1)
-					go sendGetRequestSN(snList, chunkId, &wg)
+					go sendGetRequestSN(snList, chunkId, int64(chunkSize), &wg)
 				}
 
-				wg.Wait()
+				wg.Wait() // Blocking until all the threads finish executing
 
 			} else if msg.ControllerResMessage.Type == 1 { // PUT
+				// Parse message from protobuf
 				chunkIdToSNInfo := msg.ControllerResMessage.GetStorageInfoPerChunk()
 				chunkSize := msg.ControllerResMessage.GetChunkSize()
 				chunkList := fileToChunk(localFileDir, chunkSize)
@@ -113,8 +120,11 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 						host := sn.Host
 						port := sn.Port
 
+						// Concatenate host and port into one string
 						hostAndPort := host + ":" + strconv.FormatInt(int64(port), 10)
-						encodedChunkName := base64.StdEncoding.EncodeToString([]byte(hdfsFileDir + "-" + strconv.FormatInt(int64(chunkId), 10)))
+						// Put filepath and chunk id together and encoded them
+						encodedChunkName := base64.StdEncoding.EncodeToString([]byte(hdfsFileDir + "-" +
+							strconv.FormatInt(int64(chunkId), 10)))
 
 						// Send put request to the first storage in the list
 						sendPutRequestSN(hostAndPort, chunkId, encodedChunkName, chunkList[chunkId], snList)
@@ -140,14 +150,17 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 
 		case *message.Wrapper_StorageResMessage:
 			if msg.StorageResMessage.Type == 0 { // GET
+				// Parse message from protobuf
 				chunkId := msg.StorageResMessage.GetChunkId()
 				chunkBytes := msg.StorageResMessage.GetChunkBytes()
 
+				// Keep track the number of chunk we obtained base on the chunk id
 				idToChunk[chunkId].c <- true
 				idToChunk[chunkId].chunkByte = chunkBytes
 
 			} else if msg.StorageResMessage.Type == 1 { // PUT
-				fmt.Println("success")
+				// When storage node successfully store a chunk from the client
+				fmt.Println("Success")
 				c <- true
 			}
 
@@ -161,6 +174,8 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 	}
 }
 
+// sendPutRequestSN send put request to storage nodes to upload chunk of our local file.
+// Host and port will be given by the controller.
 func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk []byte, storageInfoList *message.StorageInfoList) {
 	var msgHandler *message.MessageHandler
 
@@ -180,6 +195,7 @@ func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk
 	chunkIdToSNInfo := make(map[int32]*message.StorageInfoList)
 	chunkIdToSNInfo[chunkId] = storageInfoList
 
+	// Serialize request message to protobuf and send it to the storage node
 	msg := message.ClientRequest{
 		HashedDirectory:     chunkName,
 		ChunkId:             chunkId,
@@ -188,26 +204,25 @@ func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk
 		Type:                1,
 		StorageInfoPerChunk: chunkIdToSNInfo,
 	}
-
 	wrapper := &message.Wrapper{
 		Msg: &message.Wrapper_ClientReqMessage{ClientReqMessage: &msg},
 	}
-
 	msgHandler.Send(wrapper)
 
-	fmt.Println("WAITING")
-
+	// Blocking until the handle incoming connection receive response from storage node
+	log.Println("waiting...")
 	select {
 	case res := <-c:
-		fmt.Printf("sub channel %t\n", res)
+		fmt.Printf("Put chunk %d: %t\n", chunkId, res)
 	case <-time.After(60 * time.Second):
-		fmt.Println("sub timeout")
+		fmt.Println("Timeout... Put chunk: false")
 	}
 
 	close(c)
 }
 
-func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32, wg *sync.WaitGroup) {
+// sendGetRequestSN send GET request to fetch chunk from storage nodes
+func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32, chunkSize int64, wg *sync.WaitGroup) {
 	var msgHandler *message.MessageHandler
 	snListLength := len(snList.GetStorageInfo())
 
@@ -256,7 +271,7 @@ func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32, wg *sync.W
 		case res := <-c:
 			fmt.Printf("get chunk %d: %t\n", chunkId, res)
 			fileWriteLock.Lock()
-			_, err := fd.WriteAt(idToChunk[chunkId].chunkByte, int64(chunkId*128000000))
+			_, err := fd.WriteAt(idToChunk[chunkId].chunkByte, int64(chunkId)*chunkSize)
 
 			if err != nil {
 				log.Println(err)
@@ -276,6 +291,7 @@ func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32, wg *sync.W
 	}
 }
 
+// sendRequestController handle operation specified by the user command line input
 func sendRequestController(opType string) {
 
 	// Create connection with the controller
@@ -341,8 +357,8 @@ func sendRequestController(opType string) {
 
 	for {
 		select {
-		case res := <-c:
-			fmt.Println(res)
+		case <-c:
+			fmt.Println("Operation is successful")
 			os.Exit(0)
 		case <-time.After(60 * time.Second):
 			fmt.Println("timeout")
@@ -350,6 +366,8 @@ func sendRequestController(opType string) {
 	}
 }
 
+// parseCLI making sure the user put the correct number of input
+// and parse them to be stored on the global variable.
 func parseCLI() string {
 	cli := os.Args
 

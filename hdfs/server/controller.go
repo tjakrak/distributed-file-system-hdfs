@@ -163,7 +163,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 				if err != nil {
 					// If the directory end with a file and not a directory
 					// Or directory does not exist
-					resMsg = message.ControllerResponse{Error: err.Error()}
+					resMsg = message.ControllerResponse{Type: 2, Error: err.Error()}
 				} else {
 					// If the path provided by the client is a directory
 					resMsg = message.ControllerResponse{Type: 2}
