@@ -95,15 +95,16 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 			if msg.ControllerResMessage.Type == 0 { // GET
 				// Parse message from protobuf
 				chunkIdToSNInfo := msg.ControllerResMessage.GetStorageInfoPerChunk()
+				numOfChunk := msg.ControllerResMessage.GetNumOfChunk()
 				chunkSize := msg.ControllerResMessage.GetChunkSize()
-				idToChunk = make([]chunkStruct, chunkSize)
+				idToChunk = make([]chunkStruct, numOfChunk)
 
 				var wg sync.WaitGroup
 
 				// Iterating through each chunkId to get and store chunk to an array
 				for chunkId, snList := range chunkIdToSNInfo {
 					wg.Add(1)
-					go sendGetRequestSN(snList, chunkId, int64(chunkSize), &wg)
+					go sendGetRequestSN(snList, chunkId, numOfChunk, int64(chunkSize), &wg)
 				}
 
 				wg.Wait() // Blocking until all the threads finish executing
@@ -235,7 +236,7 @@ func sendPutRequestSN(hostAndPort string, chunkId int32, chunkName string, chunk
 }
 
 // sendGetRequestSN send GET request to fetch chunk from storage nodes
-func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32, chunkSize int64, wg *sync.WaitGroup) {
+func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32, numOfChunk int32, chunkSize int64, wg *sync.WaitGroup) {
 	var msgHandler *message.MessageHandler
 	snListLength := len(snList.GetStorageInfo())
 
@@ -284,6 +285,7 @@ func sendGetRequestSN(snList *message.StorageInfoList, chunkId int32, chunkSize 
 		case res := <-c:
 			fmt.Printf("get chunk %d: %t\n", chunkId, res)
 			fileWriteLock.Lock()
+			fmt.Println(chunkSize)
 			_, err := fd.WriteAt(idToChunk[chunkId].chunkByte, int64(chunkId)*chunkSize)
 
 			if err != nil {

@@ -86,7 +86,8 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
 					resMsg = message.ControllerResponse{
 						StorageInfoPerChunk: chunkIdToSNInfo,
-						ChunkSize:           uint64(len(chunkIdToSNIdList)),
+						ChunkSize:           uint64(sizePerChunk),
+						NumOfChunk:          int32(len(chunkIdToSNIdList)),
 						Type:                0,
 					}
 				}

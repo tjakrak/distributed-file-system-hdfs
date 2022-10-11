@@ -2,6 +2,7 @@ syntax = "proto3";
 option go_package = "./message";
 
 /* protoc -I=/Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs/proto --go_out=/Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs /Users/ryantjakrakartadinata/go/src/P1-gobald/hdfs/proto/hdfs.proto */
+/* protoc -I=/bigdata/rgtjakrakartadinata/P1-gobald/hdfs/proto --go_out=/bigdata/rgtjakrakartadinata/P1-gobald/hdfs /bigdata/rgtjakrakartadinata/P1-gobald/hdfs/proto/hdfs.proto */
 
 enum operationType {
   GET = 0;
@@ -25,12 +26,13 @@ message ClientRequest {
 
 message ControllerResponse {
   uint64 chunk_size = 1;
-  string error = 2;
-  int64 space_available = 3;
-  repeated string file_list = 4;
-  StorageInfoList node_list = 5;
-  map<int32, StorageInfoList> storage_info_per_chunk = 6;
-  operationType type = 7;
+  int32 num_of_chunk = 2;
+  string error = 3;
+  int64 space_available = 4;
+  repeated string file_list = 5;
+  StorageInfoList node_list = 6;
+  map<int32, StorageInfoList> storage_info_per_chunk = 7;
+  operationType type = 8;
 }
 
 message StorageRequest {
