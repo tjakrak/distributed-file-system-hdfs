@@ -30,6 +30,8 @@ var hashedDirToChan = make(map[string]chan bool)
 var hashedDirToChanLock = sync.RWMutex{}
 var lastHB = time.Time{}
 var lastHBLock = sync.Mutex{}
+var numOfRequest = 0
+var numOfRequestLock = sync.Mutex{}
 var waitAck chan bool
 
 func handleIncomingConnection(msgHandler *message.MessageHandler) {
@@ -40,6 +42,10 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 
 		switch msg := wrapper.Msg.(type) {
 		case *message.Wrapper_ClientReqMessage:
+			numOfRequestLock.Lock()
+			numOfRequest += 1
+			numOfRequestLock.Unlock()
+
 			if msg.ClientReqMessage.Type == 0 { // GET
 				hashedDir := msg.ClientReqMessage.GetHashedDirectory()
 				chunkId := msg.ClientReqMessage.GetChunkId()
@@ -133,7 +139,12 @@ func startHeartBeat(conn net.Conn, controllerHostPort string) {
 			spaceAvail := stat.Bavail * uint64(stat.Bsize)
 
 			// Send request to the controller
-			msg := message.Heartbeat{Id: thisId, HostAndPort: thisHostAndPort, SpaceAvailable: spaceAvail}
+			msg := message.Heartbeat{
+				Id:             thisId,
+				HostAndPort:    thisHostAndPort,
+				SpaceAvailable: int64(spaceAvail),
+				Requests:       int32(numOfRequest),
+			}
 			wrapper := &message.Wrapper{
 				Msg: &message.Wrapper_HbMessage{HbMessage: &msg},
 			}

@@ -7,6 +7,7 @@ PUT: go run client/client.go -put ../../L2-tjakrak/log2.txt home/log2.txt localh
 LS: go run client/client.go -ls ../../L2-tjakrak/ localhost:9999
 GET: go run client/client.go -get home/log2.txt s3/log.txt localhost:9999
      go run client/client.go -get <hdfs_dir> <local_dir> <controller>
+USAGE: go run client/client.go -usage localhost:9999
 */
 
 import (
@@ -142,6 +143,18 @@ func handleIncomingConnection(msgHandler *message.MessageHandler, c chan bool) {
 				// Print the file list to the terminal
 				for _, file := range fileList {
 					fmt.Println(file)
+				}
+
+			} else if msg.ControllerResMessage.Type == 4 { // USAGE
+
+				snFileList := msg.ControllerResMessage.GetNodeList()
+				spaceAvail := msg.ControllerResMessage.GetSpaceAvailable()
+
+				fmt.Printf("Available space: %d\n", spaceAvail)
+				fmt.Println("Storage node status:")
+				for _, v := range snFileList.GetStorageInfo() {
+					fmt.Printf("Host: %s | Port: %d | Num of requests: %d\n",
+						v.GetHost(), v.GetPort(), v.GetRequests())
 				}
 
 			}
@@ -347,6 +360,8 @@ func sendRequestController(opType string) {
 		msg = message.ClientRequest{Directory: hdfsFileDir, Type: 2}
 	case "-ls":
 		msg = message.ClientRequest{Directory: hdfsFileDir, Type: 3}
+	case "-usage":
+		msg = message.ClientRequest{Type: 4}
 	}
 
 	wrapper := &message.Wrapper{
@@ -372,7 +387,7 @@ func parseCLI() string {
 	cli := os.Args
 
 	// Check if the user at least put 3 cmd arg
-	if len(cli) < 4 {
+	if len(cli) < 3 {
 		fmt.Println("Missing arguments")
 		os.Exit(3)
 	}
@@ -381,7 +396,7 @@ func parseCLI() string {
 	opType := strings.ToLower(cli[1])
 
 	if opType == "-get" || opType == "-put" {
-		// Need at least 4 cmd arg because we need both local and hdfs directory
+		// Need at least 5 cmd arg because we need both local and hdfs directory
 		if len(cli) < 5 {
 			fmt.Println("Missing arguments")
 			os.Exit(3)
@@ -399,9 +414,17 @@ func parseCLI() string {
 		controllerHostPort = cli[4]
 
 	} else if opType == "-ls" || opType == "-rm" {
+		// Need at least 4 cmd arg because we need hdfs directory
+		if len(cli) < 4 {
+			fmt.Println("Missing arguments")
+			os.Exit(3)
+		}
+
 		// Parse CLI
 		hdfsFileDir = cli[2]
 		controllerHostPort = cli[3]
+	} else if opType == "-usage" {
+		controllerHostPort = cli[2]
 	}
 
 	return opType

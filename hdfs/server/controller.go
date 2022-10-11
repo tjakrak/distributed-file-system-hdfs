@@ -24,7 +24,8 @@ type storageNode struct {
 	Port       int32
 	IsAlive    bool
 	LastHB     time.Time
-	SpaceAvail uint64
+	SpaceAvail int64
+	NumOfReq   int32
 }
 
 const sizePerChunk int = 128000000 // 128 mb
@@ -34,6 +35,7 @@ var fileSystemTree = data_structure.NewFileSystemTree()
 var snIdToMemberInfo = make(map[int]*storageNode)
 var snLocation = make(map[string]bool)
 var snLatestId = 0
+var totalSpaceAvail int64 = 0
 
 var fileSystemTreeLock = sync.RWMutex{}
 var snIdToMemberInfoLock = sync.RWMutex{}
@@ -66,7 +68,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 					resMsg = message.ControllerResponse{Error: err.Error()}
 				} else { // If file does exist
 					for chunkId, snIdList := range chunkIdToSNIdList {
-						storageInfoList := new(message.StorageInfoList)
+						snInfoList := new(message.StorageInfoList)
 
 						for _, snId := range snIdList {
 							snIdToMemberInfoLock.RLock()
@@ -75,11 +77,11 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 							isAlive := snIdToMemberInfo[int(snId)].IsAlive
 							snIdToMemberInfoLock.RUnlock()
 
-							storageInfo := message.StorageInfo{Host: host, Port: port, IsAlive: isAlive}
-							storageInfoList.StorageInfo = append(storageInfoList.StorageInfo, &storageInfo)
+							snInfo := message.StorageInfo{Host: host, Port: port, IsAlive: isAlive}
+							snInfoList.StorageInfo = append(snInfoList.StorageInfo, &snInfo)
 						}
 
-						chunkIdToSNInfo[int32(chunkId)] = storageInfoList
+						chunkIdToSNInfo[int32(chunkId)] = snInfoList
 					}
 
 					resMsg = message.ControllerResponse{
@@ -188,6 +190,24 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 				}
 
 				sendControllerResponseMsg(msgHandler, &resMsg)
+			} else if msg.ClientReqMessage.Type == 4 { // USAGE
+				snInfoList := new(message.StorageInfoList)
+
+				snIdToMemberInfoLock.RLock()
+				for _, val := range snIdToMemberInfo {
+					snInfo := message.StorageInfo{
+						Host:     val.Hostname,
+						Port:     val.Port,
+						IsAlive:  val.IsAlive,
+						Requests: val.NumOfReq,
+					}
+
+					snInfoList.StorageInfo = append(snInfoList.StorageInfo, &snInfo)
+				}
+				snIdToMemberInfoLock.RUnlock()
+
+				resMsg := message.ControllerResponse{NodeList: snInfoList, SpaceAvailable: totalSpaceAvail, Type: 4}
+				sendControllerResponseMsg(msgHandler, &resMsg)
 			}
 
 		case *message.Wrapper_HbMessage:
@@ -225,6 +245,7 @@ func handleIncomingConnection(msgHandler *message.MessageHandler) {
 func registerSN(msg *message.Wrapper_HbMessage, isNew bool) (int, bool) {
 	hostAndPort := msg.HbMessage.GetHostAndPort()
 	spaceAvail := msg.HbMessage.GetSpaceAvailable()
+	numOfReq := msg.HbMessage.GetRequests()
 
 	snRegisterNewLock.Lock()
 
@@ -245,7 +266,8 @@ func registerSN(msg *message.Wrapper_HbMessage, isNew bool) (int, bool) {
 		assignedId = int(msg.HbMessage.GetId())
 	}
 
-	sn := storageNode{host, int32(port), true, time.Now(), spaceAvail}
+	sn := storageNode{host, int32(port), true, time.Now(),
+		spaceAvail, numOfReq}
 
 	// Register storage node
 	snIdToMemberInfoLock.Lock()
@@ -263,13 +285,17 @@ func registerSN(msg *message.Wrapper_HbMessage, isNew bool) (int, bool) {
 func heartBeatChecker(duration time.Duration) {
 	for tick := range time.Tick(duration) {
 		snIdToMemberInfoLock.RLock()
+		var currTotalSpaceAvail int64 = 0
 		for id, val := range snIdToMemberInfo {
+			currTotalSpaceAvail += val.SpaceAvail
 			if (val.LastHB.Add(duration)).Before(tick) {
 				log.Printf("%d Is dead", id)
 				val.IsAlive = false
 			}
 		}
 		snIdToMemberInfoLock.RUnlock()
+
+		totalSpaceAvail = currTotalSpaceAvail
 	}
 }
 

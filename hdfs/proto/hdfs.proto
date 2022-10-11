@@ -8,6 +8,7 @@ enum operationType {
   PUT = 1;
   DELETE = 2;
   LS = 3;
+  USAGE = 4;
 }
 
 /* Register a username */
@@ -25,9 +26,11 @@ message ClientRequest {
 message ControllerResponse {
   uint64 chunk_size = 1;
   string error = 2;
-  repeated string file_list = 3;
-  map<int32, StorageInfoList> storage_info_per_chunk = 4;
-  operationType type = 5;
+  int64 space_available = 3;
+  repeated string file_list = 4;
+  StorageInfoList node_list = 5;
+  map<int32, StorageInfoList> storage_info_per_chunk = 6;
+  operationType type = 7;
 }
 
 message StorageRequest {
@@ -50,6 +53,7 @@ message StorageInfo {
   string host = 1;
   int32 port = 2;
   bool isAlive = 3;
+  int32 requests = 4;
 }
 
 message StorageInfoList {
@@ -60,9 +64,8 @@ message StorageInfoList {
 message Heartbeat {
   int32 id = 1;
   string host_and_port = 2;
-  uint64 space_available = 3;
-  int32 storage = 4;
-  int32 retrievals = 5;
+  int64 space_available = 3;
+  int32 requests = 4;
 }
 
 message Wrapper {
