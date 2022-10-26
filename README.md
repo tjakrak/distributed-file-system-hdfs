@@ -1,4 +1,4 @@
-# Project 1: Distributed File System (Simplified HDFS)
+# Distributed File System (Simplified HDFS)
 A simplified HDFS implementation using Golang without MapReduce.
 
 Complete description: https://www.cs.usfca.edu/~mmalensek/cs677/assignments/project-1.html
