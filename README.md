@@ -29,15 +29,15 @@ Complete description: https://www.cs.usfca.edu/~mmalensek/cs677/assignments/proj
 ## How to run this program:
 ### Run manually
 Controller:
-&nbsp;&nbsp;&nbsp;&nbsp; - `go run server/controller.go -port <this_port>`
+&nbsp;&nbsp;&nbsp;&nbsp; - `go run server/controller.go -port <this_port>`<br>
 Storage Node:
-&nbsp;&nbsp;&nbsp;&nbsp; - `go run storage/storage_node.go <storage_dir> -port <this_port> <cont_host:port>`
+&nbsp;&nbsp;&nbsp;&nbsp; - `go run storage/storage_node.go <storage_dir> -port <this_port> <cont_host:port>`<br>
 Client:
-&nbsp;&nbsp;&nbsp;&nbsp; - Get: `go run client/client.go -get <hdfs_filepath> <local_filepath> <cont_host:port>`
-&nbsp;&nbsp;&nbsp;&nbsp; - Put: `go run client/client.go -put <local_filepath> <hdfs_filepath> <cont_host:port>`
-&nbsp;&nbsp;&nbsp;&nbsp; - Delete: `go run client/client.go -delete <hdfs_filepath> <cont_host:port>`
-&nbsp;&nbsp;&nbsp;&nbsp; - LS: `go run client/client.go -ls <hdfs_filepath> <cont_host:port>`
-&nbsp;&nbsp;&nbsp;&nbsp; - USAGE: `go run client/client.go -usage <cont_host:port>`
+&nbsp;&nbsp;&nbsp;&nbsp; - Get: `go run client/client.go -get <hdfs_filepath> <local_filepath> <cont_host:port>`<br>
+&nbsp;&nbsp;&nbsp;&nbsp; - Put: `go run client/client.go -put <local_filepath> <hdfs_filepath> <cont_host:port>`<br>
+&nbsp;&nbsp;&nbsp;&nbsp; - Delete: `go run client/client.go -delete <hdfs_filepath> <cont_host:port>`<br>
+&nbsp;&nbsp;&nbsp;&nbsp; - LS: `go run client/client.go -ls <hdfs_filepath> <cont_host:port>`<br>
+&nbsp;&nbsp;&nbsp;&nbsp; - USAGE: `go run client/client.go -usage <cont_host:port>`<br>
 
 ### Run with shell script:
 To run controller and storage nodes:
