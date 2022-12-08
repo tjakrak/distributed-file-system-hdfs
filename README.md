@@ -28,11 +28,11 @@ Complete description: https://www.cs.usfca.edu/~mmalensek/cs677/assignments/proj
 
 ## How to run this program:
 ### Run manually
-Controller:
+Controller: <br>
 &nbsp;&nbsp;&nbsp;&nbsp; - `go run server/controller.go -port <this_port>`<br>
-Storage Node:
+Storage Node: <br>
 &nbsp;&nbsp;&nbsp;&nbsp; - `go run storage/storage_node.go <storage_dir> -port <this_port> <cont_host:port>`<br>
-Client:
+Client: <br>
 &nbsp;&nbsp;&nbsp;&nbsp; - Get: `go run client/client.go -get <hdfs_filepath> <local_filepath> <cont_host:port>`<br>
 &nbsp;&nbsp;&nbsp;&nbsp; - Put: `go run client/client.go -put <local_filepath> <hdfs_filepath> <cont_host:port>`<br>
 &nbsp;&nbsp;&nbsp;&nbsp; - Delete: `go run client/client.go -delete <hdfs_filepath> <cont_host:port>`<br>
