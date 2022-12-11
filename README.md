@@ -11,20 +11,20 @@ Complete description: https://www.cs.usfca.edu/~mmalensek/cs677/assignments/proj
 4. Persistence: once a file has been acknowledged as stored, you should be able to terminate the entire DFS, restart it, and still have access to the stored files.
 
 ## Three main components in this project:
-1. Controller
-   &nbsp;&nbsp;&nbsp;&nbsp; - Responsible to manage resources just like NameNode in HDFS.
-   &nbsp;&nbsp;&nbsp;&nbsp; - Contains information about files, directories and where they are stored
-   &nbsp;&nbsp;&nbsp;&nbsp; - List of active storage node
-   &nbsp;&nbsp;&nbsp;&nbsp; - Store file index to the disk
-2. Storage Node
-   &nbsp;&nbsp;&nbsp;&nbsp; - Send heartbeat to the controller every 5 seconds
-   &nbsp;&nbsp;&nbsp;&nbsp; - Store chunks in the disk (size of each chunk is 128 mb)
-   &nbsp;&nbsp;&nbsp;&nbsp; - Send replication to other storage node
-   &nbsp;&nbsp;&nbsp;&nbsp; - Keep track on how many spaces available, retrievals and storages
-3. Client
-   &nbsp;&nbsp;&nbsp;&nbsp; - Divide files into chunks
-   &nbsp;&nbsp;&nbsp;&nbsp; - Retrieving files in parallel
-   &nbsp;&nbsp;&nbsp;&nbsp; - Able to handle these following operations: ls, put, get, delete and usage
+1. Controller<br>
+   &nbsp;&nbsp;&nbsp;&nbsp; - Responsible to manage resources just like NameNode in HDFS.<br>
+   &nbsp;&nbsp;&nbsp;&nbsp; - Contains information about files, directories and where they are stored<br>
+   &nbsp;&nbsp;&nbsp;&nbsp; - List of active storage node<br>
+   &nbsp;&nbsp;&nbsp;&nbsp; - Store file index to the disk<br>
+2. Storage Node<br>
+   &nbsp;&nbsp;&nbsp;&nbsp; - Send heartbeat to the controller every 5 seconds<br>
+   &nbsp;&nbsp;&nbsp;&nbsp; - Store chunks in the disk (size of each chunk is 128 mb)<br>
+   &nbsp;&nbsp;&nbsp;&nbsp; - Send replication to other storage node<br>
+   &nbsp;&nbsp;&nbsp;&nbsp; - Keep track on how many spaces available, retrievals and storages<br>
+3. Client<br>
+   &nbsp;&nbsp;&nbsp;&nbsp; - Divide files into chunks<br>
+   &nbsp;&nbsp;&nbsp;&nbsp; - Retrieving files in parallel<br>
+   &nbsp;&nbsp;&nbsp;&nbsp; - Able to handle these following operations: ls, put, get, delete and usage<br>
 
 ## How to run this program:
 ### Run manually
